@@ -1,0 +1,5 @@
+/bin/
+/progress/
+*.db
+*.db-wal
+*.db-shm
