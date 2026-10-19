@@ -11,7 +11,7 @@ su spec y al ADR que la justifica. Lo que no está acá está fuera de alcance.
 | F2 | Pin de sesión | `sessions.task_id` reemplaza el registro `task/<ID>/session/<uuid>`; tool `task_pin`; pin a `none` explícito | `specs/data-model.md`, `specs/api.md` | 0002, 0008 | spec |
 | F3 | Worktrees registrados | Tabla `worktrees` (path, repo, branch, base, purpose, sesión creadora); tool `worktree_register`; liveness la decide el filesystem | `specs/data-model.md` | 0002 | spec |
 | F4 | Observaciones con tarea | `task_id` y `kind` son columnas de `observations`, que es tabla propia; el pie `**Task**` se sigue escribiendo en el content porque hace legible la observación fuera de neugram | `specs/data-model.md` | 0002, 0011 | spec |
-| F5 | Búsqueda por tarea cruzando repos | `mem_search` y `mem_context` con `task_id` y filtros `where`; FTS5 y columnas en la misma base, un solo query sin topes | `specs/api.md` | 0011 | spec |
+| F5 | Búsqueda por tarea cruzando repos | `mem_search` y `mem_context` con `task_id` y filtros `where`; FTS5 y columnas en la misma base, un solo query sin topes | `specs/api.md` | 0011 | wip |
 | F6 | Handoff tipado | El handoff es una observación con `kind=handoff`, ligada a tarea y sesión; SessionStart entrega el último de la tarea pineada | `specs/hooks.md` | 0002 | spec |
 | F18 | Jerarquía de tareas | `tasks.parent_task_id`, tope duro en 3 niveles (épico → tarea → sub-tarea), sin ciclos, con dos triggers no recursivos; `task add --parent`, `task mv --parent` (arrastra el subárbol), `task tree`; la búsqueda sube a los ancestros por default y baja al subárbol con `include_subtasks` | `specs/data-model.md`, `specs/cli.md`, `specs/api.md` | 0012 | spec |
 
@@ -43,7 +43,7 @@ su spec y al ADR que la justifica. Lo que no está acá está fuera de alcance.
 
 | # | Feature | Qué entrega | Spec | ADR | Estado |
 |---|---|---|---|---|---|
-| F15 | `import-legacy` | Lee `~/.engram/engram.db` por ATTACH de importación y trae la memoria entera (6.805 observaciones, 2.313 sesiones, 4.650 prompts, 353 relaciones) más el flujo del project `tasks`; idempotente y con `--dry-run` | `specs/import-legacy.md` | 0007, 0011 | spec |
+| F15 | `import-legacy` | Lee `~/.engram/engram.db` por ATTACH de importación y trae la memoria entera (6.805 observaciones, 2.313 sesiones, 4.650 prompts, 353 relaciones) más el flujo del project `tasks`; idempotente y con `--dry-run` | `specs/import-legacy.md` | 0007, 0011 | done |
 | F16 | Corte duro | Un solo cambio en `~/.claude/settings.json`: sale el MCP de Engram, entra `neugram mcp`; salen los tres hooks legacy, entran `neugram hook <evento>`; se apaga el daemon en `:7437`. `~/.engram/engram.db` queda como archivo histórico | `specs/import-legacy.md` | 0007, 0011 | spec |
 
 ## Fuera de alcance (decidido)
