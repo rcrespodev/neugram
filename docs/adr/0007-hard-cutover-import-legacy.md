@@ -1,6 +1,6 @@
 # ADR 0007 — Corte duro con `import-legacy`; lo viejo queda como historia
 
-Estado: aceptado · Origen: obs 6574
+Estado: enmendado por ADR 0011 · Origen: obs 6574
 
 ## Contexto
 
@@ -20,3 +20,10 @@ los handoffs existentes, con `kind=handoff`). Después, un solo cambio en
 
 - El import es barato: `engram-record-gate` ya validó los formatos (`identity` con `**Name**: value`, `wt` con fence JSON).
 - Hay un instante sin red de seguridad entre desactivar los hooks viejos y probar los nuevos. Se mitiga con `--dry-run` y `neugram doctor` antes del corte.
+
+---
+
+Tras ADR 0011: el corte duro sigue siendo un solo commit de config, y por la
+misma razón. Cambia la fuente y el alcance del import: lee
+`~/.engram/engram.db` directamente, no el HTTP, y trae toda la memoria
+—observaciones, sesiones, prompts, relaciones—, no solo el project `tasks`.

@@ -1,6 +1,6 @@
 # ADR 0006 — Go, un binario, daemon más clientes finos
 
-Estado: aceptado · Origen: obs 6573
+Estado: enmendado por ADR 0011 · Origen: obs 6573
 
 ## Contexto
 
@@ -20,3 +20,11 @@ operación. SQLite vía modernc.org/sqlite, sin cgo.
 - Arranque en milisegundos, sin node_modules ni binarios nativos.
 - Un solo escritor sobre la BD propia.
 - El patrón es el mismo que usa Engram; su código es referencia legible.
+
+---
+
+Tras ADR 0011: un binario con los mismos subcomandos. `serve` deja de hacer
+el ATTACH y de hablar con Engram: abre una sola base, la propia. El layout no
+gana ningún paquete heredado — el store, la detección de repo y el formato de
+timestamps son código propio en `internal/store`, `internal/project` e
+`internal/timeutil`.

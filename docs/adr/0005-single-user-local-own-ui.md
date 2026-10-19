@@ -1,6 +1,6 @@
 # ADR 0005 — Un usuario, local, UI web propia; Engram Cloud se apaga
 
-Estado: aceptado · Origen: obs 6570
+Estado: enmendado por ADR 0011 · Origen: obs 6570
 
 ## Contexto
 
@@ -22,3 +22,10 @@ a rowid.
 
 - Cae el costo más alto del diseño anterior.
 - Si alguien más adopta el flujo, el sync se diseña entonces, con datos reales.
+
+---
+
+Tras ADR 0011: la decisión sigue entera. Cambia el alcance de "no se toca
+el Cloud Sync de upstream": el código de cloud y sync directamente no se
+copia, así que no hay nada que apagar dentro de neugram. El stack Cloud y
+el daemon de Engram se apagan afuera.
