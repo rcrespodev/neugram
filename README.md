@@ -29,3 +29,16 @@ local. Sin sync, sin nube.
 
 Las decisiones nacieron en un debate de diseño registrado en Engram
 (project `engram-tasks`, observaciones 6562–6575, task `engram-fork-debat`).
+
+## Compilar y probar
+
+Requiere Go 1.26 o superior. Sin cgo.
+
+```sh
+make test      # go test ./...
+make build     # bin/neugram, con la versión tomada de git describe
+make install   # go install a $GOBIN (o $GOPATH/bin)
+neugram version
+```
+
+Hasta dónde llega el binario hoy: la columna Estado de `docs/roadmap.md`.
