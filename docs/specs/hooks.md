@@ -1,9 +1,25 @@
 # Spec — Hooks
 
 `neugram hook <evento>` lee el JSON que Claude Code manda por stdin, llama al
-daemon en `:7438` (lo levanta si no responde, con `neugram serve` desatachado
-y espera hasta 2 s a `/health`), e imprime lo que Claude espera. Cada hook
-termina en menos de 200 ms cuando el daemon ya corre.
+daemon en `:7438` e imprime lo que Claude espera. Cada hook termina en menos
+de 200 ms cuando el daemon ya corre.
+
+## Ciclo de vida del daemon
+
+Lo comparten los hooks, `neugram mcp` y el CLI de operación:
+
+```text
+ensureDaemon()
+  GET /health
+    responde y version == la del cliente → listo
+    responde con otra version → POST /shutdown, sigue como "no responde"
+    no responde → lanza `neugram serve` desatachado (setsid, stdio a ~/.neugram/serve.log)
+                  espera hasta 2 s a /health
+```
+
+- El puerto es el lock. `serve` hace el bind de `127.0.0.1:7438` antes de abrir la base; si el bind falla porque otro `serve` ganó la carrera, sale con 0 sin tocar nada.
+- El chequeo de versión existe porque el daemon queda residente: después de `make install` el binario nuevo reemplaza al viejo en la primera llamada.
+- Fail-open: si el daemon no responde a los 2 s, el hook escribe el motivo en stderr y sale con 0 sin salida. neugram caído nunca bloquea un turno ni una sesión; `neugram doctor` es quien lo reporta.
 
 Los cinco eventos reemplazan a `engram-tasks-session` (SessionStart),
 `engram-save-gate` (Stop), `engram-record-gate` (PreToolUse sobre `mem_save`)

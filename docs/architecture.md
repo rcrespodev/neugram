@@ -142,7 +142,7 @@ sequenceDiagram
     D->>D: aplica cada gate habilitado
     alt algún gate falla
         D-->>K: decision block con la llamada exacta que lo destraba
-        K-->>CC: exit 2 + razón
+        K-->>CC: stdout {decision: block, reason}, exit 0
     else
         D-->>K: ok
         K-->>CC: exit 0
@@ -151,10 +151,12 @@ sequenceDiagram
 
 ## Despliegue
 
-Un usuario, una máquina. `go install` deja el binario; `~/.claude/settings.json`
+Un usuario, una máquina. `make install` deja el binario; `~/.claude/settings.json`
 apunta `mcpServers.neugram` a `neugram mcp` y los cinco eventos de hook a
 `neugram hook <evento>`. El daemon se levanta solo con el primer hook o MCP y
-queda residente. Sin systemd en la primera versión.
+queda residente; un cliente con otra versión lo reinicia, y si no responde los
+hooks dejan pasar el turno (`specs/hooks.md`, Ciclo de vida del daemon). Sin
+Docker ni systemd: la persistencia es el archivo `~/.neugram/neugram.db`.
 
 ## Qué no es
 

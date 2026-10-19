@@ -438,6 +438,41 @@ WHERE t.key = :key COLLATE NOCASE;
 entra por `observations_fts MATCH ?` y se cruza con las mismas columnas; los
 filtros por tarea y por campo custom son `WHERE` del mismo query, sin topes.
 
+### Búsqueda de texto
+
+El query del usuario nunca llega crudo a FTS5: es literal. Se parte por
+espacios, a cada término se le quitan todas las comillas dobles y se envuelve
+entre comillas; los términos que quedan vacíos se descartan, y si no queda
+ninguno es `invalid_request`. `match_mode: all` los une con espacio (AND
+implícito) y `any` con ` OR `. No hay frases, prefijos ni operadores: ningún
+query produce un error de sintaxis de FTS5.
+
+```text
+"fix auth"bug  -p   →  all: "fix" "authbug" "-p"     any: "fix" OR "authbug" OR "-p"
+```
+
+El orden es por `rank` (bm25 de FTS5, negativo, más negativo = mejor). La
+API expone `score = -rank`, así que ahí más alto es mejor.
+
+### Candidatos de conflicto
+
+`FindCandidates` corre dentro de la transacción del alta, sobre la fila recién
+escrita:
+
+1. Query: los términos del título, con la misma sanitización y en modo `any`.
+2. `self_rank`: el `rank` de la propia fila nueva para ese query.
+3. Candidatas: mismo `project` y `scope`, `deleted_at IS NULL`, distinta de la
+   nueva, ordenadas por `rank`.
+4. `similarity = rank / self_rank`. Pasan las que tienen
+   `similarity >= 0.8`, con tope de 3.
+
+El umbral es relativo porque bm25 absoluto escala con el largo del título y
+con el corpus. Medido sobre 500 observaciones de la base legacy: el ratio del
+mejor candidato da p10 0.36 · p50 0.60 · p90 0.94, y desde 0.8 los pares son
+conflictos reales, no títulos que solo comparten una key de tarea. El corte
+de Engram (`rank >= -2.0`) está invertido y deja pasar 2 de 500. Se
+recalibra con `POST /conflicts/scan {"dry_run": true}` después del import.
+
 ## Invariantes
 
 - Una observación tiene cero o una tarea.

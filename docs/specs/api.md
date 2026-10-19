@@ -40,11 +40,12 @@ reaprender nada) · **N** = propio de neugram.
 | [`progress_write`](#progress_write) | N | Reporte de progreso de un subagente |
 | [`progress_list`](#progress_list) | N | Lee reportes de progreso |
 
-### HTTP del daemon (`http://127.0.0.1:7438`) — 42
+### HTTP del daemon (`http://127.0.0.1:7438`) — 43
 
 | Método y ruta | Proc. | Consumidor |
 |---|---|---|
 | [`GET /health`](#get-health) | N | hooks, CLI |
+| [`POST /shutdown`](#post-shutdown) | N | hooks, MCP, CLI |
 | [`GET /project/current`](#get-projectcurrent) | E | MCP, CLI |
 | [`POST /observations`](#post-observations) | E | MCP |
 | [`GET /observations`](#get-observations) | E | MCP, UI |
@@ -226,7 +227,8 @@ Respuesta:
 
 `judgment_required` y `candidates` viajan **siempre**: los candidatos salen de
 `FindCandidates` sobre las filas que se acaban de escribir, en la misma
-transacción y en el mismo proceso. `judgment_required` es `false` con
+transacción y en el mismo proceso; `similarity` y el umbral están en
+`specs/data-model.md` (Candidatos de conflicto). `judgment_required` es `false` con
 `candidates: []` cuando no hay ninguno. Cada candidato trae su propio
 `judgment_id`: [`mem_judge`](#mem_judge) se llama una vez por candidato.
 
@@ -301,7 +303,7 @@ columna. Con `task_id` trae la tarea entera cruzando repos, que es lo que
 
 | Parámetro | Tipo | Oblig. | Default | Notas |
 |---|---|---|---|---|
-| `query` | string | sí | — | Sintaxis FTS5. Términos separados = AND |
+| `query` | string | sí | — | Literal, sin operadores FTS5 (`specs/data-model.md`, Búsqueda de texto) |
 | `match_mode` | enum | no | `all` | `all` · `any` |
 | `task_id` | string **key** | no | — | No usa el pin: sin este parámetro no filtra por tarea |
 | `include_ancestors` | bool | no | `true` | Con `task_id`: suma las observaciones de sus ancestros. Con tres niveles son a lo sumo dos ids extra |
@@ -350,7 +352,7 @@ columna. Con `task_id` trae la tarea entera cruzando repos, que es lo que
 
 `preview` son los primeros 300 caracteres del content; con `full: true` la
 clave es `content` con el texto entero. `truncated: true` avisa que `total`
-supera `limit + offset`. `score` es el bm25 de FTS5, más alto = mejor.
+supera `limit + offset`. `score` es `-bm25`: más alto = mejor.
 
 `task_key` en cada resultado dice de qué tarea es la observación, que con
 `include_ancestors` o `include_subtasks` no es necesariamente la pedida. Los
@@ -1197,6 +1199,18 @@ Espera hasta 2 s a que responda.
 ```
 
 Errores: ninguno. No responder es la respuesta negativa.
+
+#### `POST /shutdown`
+
+**N** · Cierra el daemon: termina las requests en curso, cierra la base y
+libera el puerto. La llama el cliente cuando `/health.version` no coincide
+con la suya (`specs/hooks.md`, Ciclo de vida del daemon). Body vacío.
+
+```json
+{ "status": "stopping" }
+```
+
+Errores: ninguno.
 
 #### `GET /project/current`
 
