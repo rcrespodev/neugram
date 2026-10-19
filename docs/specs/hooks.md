@@ -23,9 +23,8 @@ y a los hooks del plugin de Engram.
 
 Entrada: `session_id`, `cwd`, `source` (`startup|resume|clear|compact`).
 
-1. `POST /sessions` a Engram con `{id, project, directory}` si la sesión no existe allí. `project` según `specs/engram-boundary.md`.
-2. Upsert `sessions(id, cwd, started_at)`. En `resume`/`compact` la fila ya existe y conserva su pin.
-3. Salida a stdout, en este orden:
+1. Upsert local de `sessions(id, project, directory, started_at)` si la fila no existe; `project` sale de `internal/project` (derivado del git remote o del directorio). En `resume`/`compact` la fila ya existe y conserva su pin.
+2. Salida a stdout, en este orden:
    - `CLAUDE_CODE_SESSION_ID=<id>`: la sesión no puede leer su propio id; el hook es la única fuente.
    - Instrucciones: parte generada + parte libre (`specs/instructions-and-gates.md`), con override del producto de la tarea pineada si la hay.
    - Estado del pin: `Pin: <key> — <título> [<status>]`, `Pin: none`, o `Sin pin todavía. Fijalo con task_pin antes de tocar archivos.` seguido de las tareas abiertas (`status != done`) con producto y status.
@@ -36,9 +35,9 @@ Entrada: `session_id`, `cwd`, `source` (`startup|resume|clear|compact`).
 
 Entrada: `session_id`, `prompt`.
 
-`POST /prompts {session_id, content}` a Engram. Se omite si el prompt tiene
-menos de 10 caracteres sin espacios. No imprime nada. Un fallo de Engram no
-bloquea el prompt: se loguea.
+`POST /prompts {session_id, content}` al daemon (`specs/api.md`). Se omite si
+el prompt tiene menos de 10 caracteres sin espacios. No imprime nada. Un fallo
+no bloquea el prompt: se loguea.
 
 ## `stop`
 
@@ -69,7 +68,7 @@ Un bloqueo le devuelve el control al subagente una sola vez; con
 
 Entrada: `session_id`, `reason`.
 
-`POST /sessions/{id}/end` a Engram y `sessions.ended_at = now`. No imprime.
+`POST /sessions/{id}/end` al daemon y `sessions.ended_at = now`. No imprime.
 
 ## Registro
 
