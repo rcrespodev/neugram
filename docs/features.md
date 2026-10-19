@@ -7,12 +7,12 @@ su spec y al ADR que la justifica. Lo que no está acá está fuera de alcance.
 
 | # | Feature | Qué entrega | Spec | ADR | Estado |
 |---|---|---|---|---|---|
-| F1 | Producto → Tarea → Observación | Tablas propias `products` y `tasks`; la tarea absorbe lo que hoy son los registros `identity` y `status` | `specs/data-model.md` | 0002 | spec |
-| F2 | Pin de sesión | `sessions.task_id` reemplaza el registro `task/<ID>/session/<uuid>`; tool `task_pin`; pin a `none` explícito | `specs/data-model.md`, `specs/api.md` | 0002, 0008 | spec |
-| F3 | Worktrees registrados | Tabla `worktrees` (path, repo, branch, base, purpose, sesión creadora); tool `worktree_register`; liveness la decide el filesystem | `specs/data-model.md` | 0002 | spec |
-| F4 | Observaciones con tarea | `task_id` y `kind` son columnas de `observations`, que es tabla propia; el pie `**Task**` se sigue escribiendo en el content porque hace legible la observación fuera de neugram | `specs/data-model.md` | 0002, 0011 | spec |
+| F1 | Producto → Tarea → Observación | Tablas propias `products` y `tasks`; la tarea absorbe lo que hoy son los registros `identity` y `status` | `specs/data-model.md` | 0002 | wip |
+| F2 | Pin de sesión | `sessions.task_id` reemplaza el registro `task/<ID>/session/<uuid>`; tool `task_pin`; pin a `none` explícito | `specs/data-model.md`, `specs/api.md` | 0002, 0008 | wip |
+| F3 | Worktrees registrados | Tabla `worktrees` (path, repo, branch, base, purpose, sesión creadora); tool `worktree_register`; liveness la decide el filesystem | `specs/data-model.md` | 0002 | wip |
+| F4 | Observaciones con tarea | `task_id` y `kind` son columnas de `observations`, que es tabla propia; el pie `**Task**` se sigue escribiendo en el content porque hace legible la observación fuera de neugram | `specs/data-model.md` | 0002, 0011 | wip |
 | F5 | Búsqueda por tarea cruzando repos | `mem_search` y `mem_context` con `task_id` y filtros `where`; FTS5 y columnas en la misma base, un solo query sin topes | `specs/api.md` | 0011 | wip |
-| F6 | Handoff tipado | El handoff es una observación con `kind=handoff`, ligada a tarea y sesión; SessionStart entrega el último de la tarea pineada | `specs/hooks.md` | 0002 | spec |
+| F6 | Handoff tipado | El handoff es una observación con `kind=handoff`, ligada a tarea y sesión; SessionStart entrega el último de la tarea pineada | `specs/hooks.md` | 0002 | wip |
 | F18 | Jerarquía de tareas | `tasks.parent_task_id`, tope duro en 3 niveles (épico → tarea → sub-tarea), sin ciclos, con dos triggers no recursivos; `task add --parent`, `task mv --parent` (arrastra el subárbol), `task tree`; la búsqueda sube a los ancestros por default y baja al subárbol con `include_subtasks` | `specs/data-model.md`, `specs/cli.md`, `specs/api.md` | 0012 | spec |
 
 ## Extensibilidad
@@ -30,7 +30,7 @@ su spec y al ADR que la justifica. Lo que no está acá está fuera de alcance.
 | F10 | MCP espejo extendido | Mismos nombres que Engram (`mem_save`, `mem_search`, …) con `task_id`, campos custom y `where`; más `task_pin`, `task_list`, `task_status`, `worktree_register`, `handoff_save`, `progress_write`, `progress_list`. Único MCP que ve el agente | `specs/api.md` | 0008 | spec |
 | F11 | Prompts capturados por hook | `UserPromptSubmit` hace el `POST /prompts`; el agente deja de tener que acordarse | `specs/hooks.md` | 0009 | spec |
 | F12 | Hooks como subcomandos | `neugram hook <evento>` para SessionStart, UserPromptSubmit, Stop, SubagentStop, SessionEnd; levantan el daemon si no corre; reemplazan al plugin de hooks de Engram y al Python de engram-tasks | `specs/hooks.md`, `specs/cli.md` | 0006 | spec |
-| F13 | CLI de operación | `task`, `product`, `schema`, `instructions`, `gate`, `doctor`, `import-legacy` | `specs/cli.md` | 0006 | spec |
+| F13 | CLI de operación | `task`, `product`, `schema`, `instructions`, `gate`, `doctor`, `import-legacy` | `specs/cli.md` | 0006 | wip |
 | F14 | UI web local | Tablero de tareas por producto y status, detalle de tarea (sesiones, worktrees vivos/muertos, observaciones, handoffs), búsqueda con filtros por columna; reemplaza lo único que interesaba de Engram Cloud | `specs/web-ui.md` | 0005 | spec |
 
 ## Delegación

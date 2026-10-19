@@ -14,17 +14,14 @@ import (
 	"github.com/rcrespodev/neugram/internal/legacy"
 )
 
-const (
-	defaultEngramDB  = "~/.engram/engram.db"
-	defaultNeugramDB = "~/.neugram/neugram.db"
-)
+const defaultEngramDB = "~/.engram/engram.db"
 
 func runImportLegacy(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("import-legacy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dryRun := fs.Bool("dry-run", false, "verify and print the summary without writing")
 	engramDB := fs.String("engram-db", defaultEngramDB, "legacy Engram database, opened read-only")
-	db := fs.String("db", defaultNeugramDB, "target neugram database")
+	db := fs.String("db", defaultDB(), "target neugram database")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -64,7 +61,7 @@ func runImportLegacy(args []string, stdout, stderr io.Writer) int {
 func runDoctor(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	db := fs.String("db", defaultNeugramDB, "neugram database to check")
+	db := fs.String("db", defaultDB(), "neugram database to check")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

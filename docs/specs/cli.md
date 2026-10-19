@@ -43,6 +43,8 @@ neugram version
 
 ## Comportamientos que no son obvios
 
+- `NEUGRAM_HOME` (default `~/.neugram`) mueve `neugram.db`, `serve.log` y `hooks.log`; `NEUGRAM_ADDR` (default `127.0.0.1:7438`) mueve el puerto. El daemon que levanta el CLI hereda los dos, así que una base de prueba nunca toca la real.
+- Los listados piden páginas de 200 al daemon hasta traer todo: `task ls` no tiene tope. Sin `--status` ni `--all` lista lo que no está en `done`, ordenado por `key` byte a byte.
 - `task add` con una `key` existente falla; para cambiar título o producto está `task edit <key> [--title] [--product]` (mismo comando, flags opcionales).
 - `task status` es la única forma, junto con la tool `task_status`, de cambiar el status. Ningún hook lo toca.
 - `schema add` corre el DDL en el momento y regenera el JSON Schema del MCP; las sesiones MCP ya abiertas lo ven en la próxima llamada a `tools/list`.
