@@ -479,11 +479,23 @@ escrita:
    `similarity >= 0.8`, con tope de 3.
 
 El umbral es relativo porque bm25 absoluto escala con el largo del título y
-con el corpus. Medido sobre 500 observaciones de la base legacy: el ratio del
-mejor candidato da p10 0.36 · p50 0.60 · p90 0.94, y desde 0.8 los pares son
-conflictos reales, no títulos que solo comparten una key de tarea. El corte
-de Engram (`rank >= -2.0`) está invertido y deja pasar 2 de 500. Se
-recalibra con `POST /conflicts/scan {"dry_run": true}` después del import.
+con el corpus. El ratio no está acotado a 1: una fila más corta o más densa
+en esos términos rankea mejor que la propia.
+
+Medido el 2026-10-19 sobre la base legacy importada (`import-legacy` de un
+snapshot de `~/.engram/engram.db`), con el query, el `project`/`scope` y el
+`self_rank` de `FindCandidates` y sin umbral: n = 7.656 observaciones vivas,
+7.645 con algún candidato. El ratio del mejor da p10 0.46 · p50 0.76 ·
+p90 1.65; pasan unas 4.520 con 0.7, 3.377 con 0.8 y 2.388 con 0.9.
+
+El corte es donde cae la precisión, no donde se vuelve alta: revisados a mano
+~50 pares, entre 0.7 y 1.0 la mitad o algo más son conflictos reales
+(duplicados, un handoff que reemplaza al anterior de la misma tarea) sin
+mejora al subir el umbral; por debajo de 0.7 baja a uno de cuatro. 0.8 queda
+dentro de esa meseta y acota el volumen. El ruido que sobrevive al corte no
+lo resuelve ningún umbral: 2.012 de los 3.377 pares sobre 0.8 tienen de
+candidato un `session_summary`, cuyo content largo nombra todo, y los
+handoffs de tareas distintas comparten título salvo la key.
 
 ## Invariantes
 

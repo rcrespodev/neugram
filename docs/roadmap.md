@@ -22,7 +22,6 @@ avanzan en paralelo contra el mismo schema.
 
 ## Deuda conocida al arrancar
 
-- Las tres semánticas del store que sólo existían en el código de Engram están fijadas: `normalized_hash` en `specs/engram-provenance.md`; la sanitización del query y el umbral de `FindCandidates` en `specs/data-model.md` (Búsqueda de texto, Candidatos de conflicto). El umbral (`similarity >= 0.8`) se recalibra contra los datos importados al cerrar el paso 1b.
 - El gate `require-progress-report` necesita que el input de `SubagentStop` identifique el transcript del subagente (no el del padre). Verificarlo contra la versión de Claude Code que corre antes del paso 4; si no, el gate no se puede evaluar y F17 queda sin enforcement.
 - El import corre con el daemon de Engram apagado. Si se corre con el daemon vivo, el ATTACH de solo lectura sobre WAL puede ver una base a mitad de un checkpoint; `--dry-run` no lo detecta.
 - `**Product**` es prosa: el import normaliza 23 cadenas a 13 productos y deja el original en `notes`. La consolidación real la hace el usuario con el CLI después del paso 1b.
