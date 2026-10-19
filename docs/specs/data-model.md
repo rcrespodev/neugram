@@ -162,6 +162,12 @@ dato importado, no el código nuevo: recomputada sobre 3.000 filas de la base
 legacy reproduce el valor almacenado en las 3.000, y la verificación 6 de
 `specs/import-legacy.md` la revalida antes de escribir nada.
 
+El dedupe mira hacia atrás 15 minutos sobre `created_at`: un alta igual dentro
+de esa ventana incrementa `duplicate_count` y `last_seen_at` de la fila
+existente en vez de insertar. Una observación con `topic_key` no pasa nunca por
+el dedupe: va al upsert por `(topic_key, project, scope)`, que incrementa
+`revision_count`, y si no hay fila que pisar se inserta.
+
 `sync_id` conserva el nombre que le puso el cloud que ya no existe. No se
 renombra: es la clave de unión de los 6.805 registros importados, y la
 referencia de `memory_relations` y de los handoffs. `id` se conserva porque
@@ -447,6 +453,11 @@ ninguno es `invalid_request`. `match_mode: all` los une con espacio (AND
 implícito) y `any` con ` OR `. No hay frases, prefijos ni operadores: ningún
 query produce un error de sintaxis de FTS5.
 
+La expresión resultante va siempre acotada a `{title content}: (...)` en
+`observations_fts`, y a `content` en `prompts_fts`: `project`, `type`,
+`tool_name` y `topic_key` están indexadas pero no se buscan como texto, porque
+una palabra como el nombre del repo coincidiría con todas sus filas.
+
 ```text
 "fix auth"bug  -p   →  all: "fix" "authbug" "-p"     any: "fix" OR "authbug" OR "-p"
 ```
@@ -459,7 +470,8 @@ API expone `score = -rank`, así que ahí más alto es mejor.
 `FindCandidates` corre dentro de la transacción del alta, sobre la fila recién
 escrita:
 
-1. Query: los términos del título, con la misma sanitización y en modo `any`.
+1. Query: los términos del título, con la misma sanitización, en modo `any`
+   y acotados a `{title content}`.
 2. `self_rank`: el `rank` de la propia fila nueva para ese query.
 3. Candidatas: mismo `project` y `scope`, `deleted_at IS NULL`, distinta de la
    nueva, ordenadas por `rank`.
