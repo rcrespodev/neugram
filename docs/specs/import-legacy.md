@@ -10,6 +10,10 @@ project `tasks`. Una sola corrida. La base legacy no se toca nunca.
 ATTACH DATABASE 'file:~/.engram/engram.db?mode=ro' AS legacy;
 ```
 
+`--engram-db <path>` cambia el archivo legacy (default `~/.engram/engram.db`) y
+`--db <path>` la base destino (default `~/.neugram/neugram.db`); con los dos se
+verifica contra una copia sin tocar ninguna de las dos bases reales.
+
 Es un ATTACH de importación, no de operación: vive lo que dura el comando y no
 vuelve a abrirse (ADR 0011). No hay HTTP de por medio, así que no hay tope de
 20 resultados ni filtros que el endpoint ignora en silencio. Engram usa WAL: el
@@ -30,6 +34,13 @@ reconstrucción es minúsculas, colapsar espacios, sha256; hoy da 3.000/3.000 co
 importado queda roto en silencio —dos observaciones idénticas con hashes
 distintos no se reconocen nunca—, y por eso aborta en vez de avisar.
 
+La muestra es la tabla entera: recomputar 8.571 hashes tarda menos que elegir
+cuáles, así que la verificación 6 cubre todas las filas con `normalized_hash`.
+
+Junto a las seis corre un gate de timestamps: todo valor de tiempo legacy tiene
+que parsear como `YYYY-MM-DD HH:MM:SS` o `YYYY-MM-DDTHH:MM:SSZ`; uno que no
+parsea aborta igual que una verificación, con el conteo por `tabla.columna`.
+
 Medido el 2026-09-21 sobre 64 MB: 6.805 observaciones, 2.313 sesiones, 4.650
 prompts, 353 relaciones, 331 registros en el project `tasks`.
 
@@ -37,13 +48,17 @@ prompts, 353 relaciones, 331 registros en el project `tasks`.
 
 Copia fila a fila, preservando `id`, `sync_id` y timestamps. El orden lo impone
 la FK: `sessions` → `observations` y `user_prompts` → `memory_relations`.
+Preservar un timestamp es preservar el instante, no el texto: cada columna de
+tiempo legacy (`YYYY-MM-DD HH:MM:SS`, UTC) se normaliza a
+`2006-01-02T15:04:05Z`, la forma que el store escribe y compara como texto, y
+un valor que no parsea aborta el import antes de escribir.
 
 | Origen | Destino | Nota |
 |---|---|---|
 | `legacy.sessions` | `sessions` | `created_at = started_at`; `task_id`/`pinned_at` los llena la fase 2 |
 | `legacy.observations` | `observations` | Todas salvo las 269 de control (abajo). Los soft-deletes se copian con su `deleted_at` |
 | `legacy.user_prompts` | `user_prompts` | |
-| `legacy.memory_relations` | `memory_relations` | |
+| `legacy.memory_relations` | `memory_relations` | Salvo las que tienen un extremo en un registro de control: ese extremo no se importa como observación y la FK contra `observations(sync_id)` no se puede cumplir. Se cuentan y se listan por `sync_id` |
 
 Las tablas de sync y cloud no se copian: `sync_mutations` (27.755 filas, 21,7 MB
 de los 64), `sync_state`, `sync_chunks`, `sync_enrolled_projects`,
@@ -57,8 +72,9 @@ el índice quede consistente con los `rowid` copiados.
 ## Fase 2 — flujo
 
 Los 331 registros del project `tasks` no entran como observaciones: su
-contenido es el estado que las columnas van a guardar. La excepción son los
-handoffs, que son memoria de verdad.
+contenido es el estado que las columnas van a guardar. Las excepciones son los
+handoffs, que son memoria de verdad, y los registros que no tienen forma de
+control (fila "otros" de la tabla).
 
 Regex sobre `topic_key`, contra la forma que escribieron los hooks legacy:
 `identity` y `status` sin sufijo; `session`, `wt` y `handoff` con sufijo
@@ -72,7 +88,8 @@ por `id`.
 | `task/<id>/session/<uuid>` | 126 | `sessions` | `UPDATE sessions SET task_id, pinned_at=created_at, pinned_by='import' WHERE id=<uuid>`. 25 pinean a `none`: `task_id NULL`, `pinned_at` igual. Todos los uuid existen en `legacy.sessions` |
 | `task/<id>/wt/<basename>` | 83 | `worktrees` | Fence ```json con `path, repo, branch, base, created_by_session, purpose`. Los viejos con `**Path**: …` / `Path:` / `- Path:` se parsean línea a línea. Upsert por `path`. 82 tienen path parseable: 62 vivos en disco, 20 muertos |
 | `task/<id>/handoff/<uuid>` | 62 | `observations` | Se importa como observación con `kind='handoff'`, `task_id`, `session_id=<uuid>` y `project` reescrito al de esa sesión, no `tasks`. Los 62 uuid existen |
-| otros | 9 | — | Se cuentan y se listan por `topic_key`; no se importan |
+| `task/<id>/progress/<uuid>/<slot>` | — | `progress_reports` | Fence ```json con `status, references, summary, next_steps`. `session_id=<uuid>`, `delegation_id=<slot>`, `role` = prefijo del slot (`explore`/`impl`/`review`), `refs` = `references`. Un `summary`/`next_steps` escrito como string o con ítems no string se guarda como array de strings. Upsert por `(session_id, delegation_id)` |
+| otros | 9 | `observations` | Todo registro del project `tasks` sin forma de control, incluidas las filas sin `topic_key`, se importa como observación común: conserva project `tasks`, `type`, `title`, `content`, `sync_id` y timestamps, y su pie `**Task**` llena `task_id` como en la fase 3. El resumen los cuenta y los lista aparte. Decisión del usuario del 2026-10-19; antes se contaban y no se importaban |
 
 Una tarea referida por un pin, un wt o un handoff sin registro `identity` se
 crea con `title = key` y `status = todo`, y se lista al final como "sin
@@ -88,6 +105,9 @@ triggers de profundidad de `specs/data-model.md` no se disparan ni una vez.
 Hay un indicio y se deja pasar a propósito: cuatro identities meten el padre
 adentro de la prosa de `**Product**` (`Microservices (react) · parent
 TRIPULSE-3652`, `Portal / Administración Clientes (padre TRIPULSE-3242)`).
+El resumen reconoce `parent <KEY>`, `padre <KEY>`, `subtarea de <KEY>`,
+`epic <KEY>` y `épica <KEY>` (no una key suelta entre paréntesis), y descarta
+el indicio que nombra a la propia tarea.
 Es el mismo caso que el producto —prosa libre, no contrato— y la decisión es la
 misma: el import no adivina. La cadena original entera queda en `tasks.notes`,
 así que el indicio sobrevive al import y el resumen lo lista. Armar el árbol es
@@ -119,7 +139,9 @@ con ella, 25 keys y una sola observación irresoluble (`pendiente de decidir`).
 Medido: 1.195 observaciones con pie en la última línea. 1.059 con key, 136 con
 `ninguna` — que insertan `task_id NULL`, indistinguible de una observación sin
 pie en la columna, y es correcto: las dos significan "sin tarea". Una key que
-no existe en `tasks` se crea como arriba.
+no existe en `tasks` se crea como arriba. `none` vale lo mismo que `ninguna`: es la key que
+usan los pins `task/none/...`. Una key es un solo token sin espacios; lo demás
+(`pendiente de decidir`) es irresoluble.
 
 El pie se sigue escribiendo en el content de las observaciones nuevas
 (`specs/api.md`), redundante con la columna, porque es lo que hace legible
@@ -134,8 +156,21 @@ guardando el uuid sin exigirlo.
 
 Cada destino se upsertea por su clave natural: `sessions.id`,
 `observations.sync_id`, `user_prompts.sync_id`, `memory_relations.sync_id`,
-`tasks.key`, `worktrees.path`, `products.name`. Correr dos veces da el mismo
-resultado. `meta.last_import_at` y `meta.legacy_db_path` guardan la corrida.
+`tasks.key`, `worktrees.path`, `products.name`,
+`progress_reports.(session_id, delegation_id)`. Correr dos veces da el mismo
+resultado. `meta.last_import_at` y `meta.legacy_db_path` guardan la corrida, y
+la transacción que aplica el DDL escribe `meta.schema_version`.
+
+Reimportar vale sólo antes del corte (paso 3): pisa los campos importados
+—`status`, `title`, producto y `notes` de cada tarea, y el content de las
+observaciones legacy— con lo que diga el archivo legacy, así que un cambio
+hecho con el CLI de neugram sobre esos campos se pierde. Lo que el legacy no
+trae, como `parent_task_id`, no se toca.
+
+La verificación corre dentro de la misma transacción que escribe, y cualquier
+falla la revierte entera: la base destino queda como estaba, y si la corrida
+la creó, se borra. `--db` apuntando al mismo archivo que `--engram-db` se
+rechaza antes de abrir nada.
 
 ## Salida
 
@@ -153,9 +188,25 @@ pins            126   (101 con tarea, 25 none)
 worktrees        82   (62 vivos, 20 muertos) · 1 registro sin path parseable
 handoffs         62   vinculados a tarea y sesión
 pies          1.195   1.059 con tarea · 136 ninguna · 1 sin key resoluble
-otros             9   registros ignorados: <lista de topic_keys>
+tasks→obs         9   registros del project tasks sin forma de control, importados como observación: <lista>
 hash          3.000   normalized_hash recomputado · 0 discrepancias
 ```
+
+Medido de nuevo el 2026-10-19 sobre un snapshot de 8.571 observaciones. Las
+diferencias son crecimiento de la base, no cambio de semántica: sesiones 2.492;
+observaciones 7.455 (1.116 de control); prompts 5.839; relaciones 434 (415
+juzgadas, 19 pendientes) más 14 omitidas por apuntar a registros de control;
+tareas 80 (72 con identity, 8 creadas); productos 23 desde 40 cadenas; pins 277
+(222 con tarea, 49 none, 6 reemplazados por un pin más nuevo de la misma
+sesión); worktrees 159 (135 vivos, 24 muertos), 1 sin path parseable; handoffs
+167; progress 367 desde 369 registros; pies 2.164 (2.002 con tarea, 161
+ninguna, 1 sin key resoluble); otros 18 (importados como observación, abajo); hash 8.571 · 0 discrepancias;
+timestamps 37.120 normalizados · 0 sin parsear. Con la decisión del mismo día
+de importar los "otros" (12 con `topic_key`, 6 sin él): 18 observaciones más en
+el project `tasks`, 931 registros de control no importados, pies 2.178 (2.013
+con tarea, 164 ninguna, 1 sin key resoluble). Las 14 relaciones omitidas siguen
+omitidas: cada una tiene el otro extremo en un registro `status`, `wt` o
+`identity`, que no es observación.
 
 ## Corte
 

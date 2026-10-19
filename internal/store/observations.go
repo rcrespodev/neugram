@@ -119,7 +119,7 @@ func (s *Store) writeObservation(ctx context.Context, tx *sql.Tx, in NewObservat
 			return 0, err
 		}
 	} else {
-		cutoff := s.now().Add(-DedupeWindow).UTC().Format(timeLayout)
+		cutoff := s.now().Add(-DedupeWindow).UTC().Format(TimeLayout)
 		err := tx.QueryRowContext(ctx, `SELECT id FROM observations
 			WHERE normalized_hash = ? AND project = ? AND scope = ? AND type = ? AND title = ?
 			  AND created_at >= ? AND deleted_at IS NULL

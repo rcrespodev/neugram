@@ -19,7 +19,8 @@ import (
 // SchemaVersion is the value of meta.schema_version for the DDL in schema.sql.
 const SchemaVersion = "1"
 
-const timeLayout = "2006-01-02T15:04:05Z"
+// TimeLayout is the ISO 8601 UTC form every timestamp column holds as text.
+const TimeLayout = "2006-01-02T15:04:05Z"
 
 const (
 	walAttempts   = 100
@@ -150,7 +151,7 @@ func (s *Store) withTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func (s *Store) timestamp() string { return s.now().UTC().Format(timeLayout) }
+func (s *Store) timestamp() string { return s.now().UTC().Format(TimeLayout) }
 
 func newSyncID(prefix string) string {
 	b := make([]byte, 16)

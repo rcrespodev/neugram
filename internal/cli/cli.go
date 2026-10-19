@@ -14,7 +14,11 @@ var Version = "dev"
 const usage = `usage: neugram <command>
 
 commands:
-  version   print the build version
+  import-legacy [--dry-run] [--engram-db PATH] [--db PATH]
+                import ~/.engram/engram.db into neugram.db
+  doctor [--db PATH]
+                check the health of neugram.db
+  version       print the build version
 `
 
 // Run executes the subcommand named in args and returns the process exit code.
@@ -27,6 +31,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "version":
 		fmt.Fprintln(stdout, versionLine())
 		return 0
+	case "import-legacy":
+		return runImportLegacy(args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
