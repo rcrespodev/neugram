@@ -580,6 +580,51 @@ func TestFindCandidatesWithoutTitleTerms(t *testing.T) {
 	}
 }
 
+func TestFindCandidatesSkipsExcludedNewObservation(t *testing.T) {
+	cases := []NewObservation{
+		{Type: "session_summary"},
+		{Type: "handoff", Kind: KindHandoff},
+		{Type: "handoff"},
+		{Type: "discovery", Kind: KindHandoff},
+	}
+	for _, in := range cases {
+		t.Run(in.Type+"/"+in.Kind, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			save(t, s, NewObservation{Title: "Jerarquía de tareas", Content: "one"})
+			in.Title, in.Content = "Jerarquía de tareas", "two"
+			res := save(t, s, in)
+			if len(res.Candidates) != 0 {
+				t.Fatalf("candidates for an excluded observation: %+v", res.Candidates)
+			}
+			again, err := s.FindCandidates(context.Background(), res.Observation.SyncID)
+			if err != nil || len(again) != 0 {
+				t.Fatalf("FindCandidates: %+v, %v", again, err)
+			}
+		})
+	}
+}
+
+func TestFindCandidatesNeverOffersExcludedRows(t *testing.T) {
+	cases := []NewObservation{
+		{Type: "session_summary"},
+		{Type: "handoff", Kind: KindHandoff},
+		{Type: "handoff"},
+		{Type: "discovery", Kind: KindHandoff},
+	}
+	for _, in := range cases {
+		t.Run(in.Type+"/"+in.Kind, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			kept := save(t, s, NewObservation{Title: "Jerarquía de tareas", Content: "jerarquía de tareas con tres niveles y un trigger"})
+			in.Title, in.Content = "Jerarquía de tareas", "jerarquía de tareas"
+			excluded := save(t, s, in)
+			res := save(t, s, NewObservation{Title: "Jerarquía de tareas", Content: "nueva"})
+			if len(res.Candidates) != 1 || res.Candidates[0].SyncID != kept.Observation.SyncID {
+				t.Fatalf("want only %s, got %+v (excluded %s)", kept.Observation.SyncID, res.Candidates, excluded.Observation.SyncID)
+			}
+		})
+	}
+}
+
 func TestSessions(t *testing.T) {
 	s, c := newTestStore(t)
 	ctx := context.Background()

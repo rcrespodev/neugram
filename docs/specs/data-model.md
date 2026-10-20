@@ -470,32 +470,50 @@ API expone `score = -rank`, así que ahí más alto es mejor.
 `FindCandidates` corre dentro de la transacción del alta, sobre la fila recién
 escrita:
 
-1. Query: los términos del título, con la misma sanitización, en modo `any`
+1. Filtro por tipo: si la fila nueva tiene `type` `session_summary` o
+   `handoff`, o `kind = 'handoff'`, no se buscan candidatos.
+2. Query: los términos del título, con la misma sanitización, en modo `any`
    y acotados a `{title content}`.
-2. `self_rank`: el `rank` de la propia fila nueva para ese query.
-3. Candidatas: mismo `project` y `scope`, `deleted_at IS NULL`, distinta de la
-   nueva, ordenadas por `rank`.
-4. `similarity = rank / self_rank`. Pasan las que tienen
+3. `self_rank`: el `rank` de la propia fila nueva para ese query.
+4. Candidatas: mismo `project` y `scope`, `deleted_at IS NULL`, distinta de la
+   nueva, con `type` fuera de `session_summary` y `handoff` y `kind` distinto
+   de `handoff`, ordenadas por `rank`.
+5. `similarity = rank / self_rank`. Pasan las que tienen
    `similarity >= 0.8`, con tope de 3.
+
+El filtro corre en los dos lados porque esos registros no afirman nada propio:
+un `session_summary` resume la sesión y un handoff resume el estado de una
+tarea, así que no contradicen ni reemplazan una observación. El reemplazo
+entre handoffs ya lo resuelve la estructura: lo que se lee es el último
+handoff de la tarea. Un handoff se reconoce por `kind`, no solo por `type`:
+`handoff_save` escribe los dos, pero los importados conservan su `type`
+legacy (`discovery` o `config`) con `kind = 'handoff'`.
 
 El umbral es relativo porque bm25 absoluto escala con el largo del título y
 con el corpus. El ratio no está acotado a 1: una fila más corta o más densa
 en esos términos rankea mejor que la propia.
 
 Medido el 2026-10-19 sobre la base legacy importada (`import-legacy` de un
-snapshot de `~/.engram/engram.db`), con el query, el `project`/`scope` y el
-`self_rank` de `FindCandidates` y sin umbral: n = 7.656 observaciones vivas,
-7.645 con algún candidato. El ratio del mejor da p10 0.46 · p50 0.76 ·
-p90 1.65; pasan unas 4.520 con 0.7, 3.377 con 0.8 y 2.388 con 0.9.
+snapshot de `~/.engram/engram.db`), con el query, el `project`/`scope`, el
+`self_rank` y el filtro de `FindCandidates` y sin umbral: n = 6.043
+observaciones vivas fuera del filtro, 6.031 con algún candidato. El ratio del
+mejor da p10 0.40 · p50 0.66 · p90 0.93; pasan 2.541 con 0.7, 1.496 con 0.8
+y 749 con 0.9. Sin filtro (n = 7.656) pasaban 3.377 con 0.8, y 2.012 de esos
+pares tenían de candidato un `session_summary`, cuyo título genérico y
+content largo coinciden con todo el `project`.
+
+Los handoffs se midieron aparte: de los 63 pares sobre 0.8 que los
+involucraban sin `session_summary`, 27 eran handoff contra un handoff
+anterior de la misma tarea, 8 contra handoffs de otra tarea con los que
+compartían `Handoff` y términos de la épica, y el resto, 28, un handoff
+contra la observación de la misma tarea que ya registraba el hecho que el
+handoff resume. Ninguno es un conflicto que el umbral deba resolver.
 
 El corte es donde cae la precisión, no donde se vuelve alta: revisados a mano
-~50 pares, entre 0.7 y 1.0 la mitad o algo más son conflictos reales
-(duplicados, un handoff que reemplaza al anterior de la misma tarea) sin
-mejora al subir el umbral; por debajo de 0.7 baja a uno de cuatro. 0.8 queda
-dentro de esa meseta y acota el volumen. El ruido que sobrevive al corte no
-lo resuelve ningún umbral: 2.012 de los 3.377 pares sobre 0.8 tienen de
-candidato un `session_summary`, cuyo content largo nombra todo, y los
-handoffs de tareas distintas comparten título salvo la key.
+pares de la población filtrada, entre 0.7 y 1.0 algo más de la mitad son el
+mismo asunto (duplicados, una corrección o un paso siguiente del mismo
+cambio) sin mejora clara al subir el umbral; por debajo de 0.7 baja a uno de
+cuatro. 0.8 queda dentro de esa meseta y acota el volumen.
 
 ## Invariantes
 

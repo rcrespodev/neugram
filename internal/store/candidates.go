@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"slices"
+	"strings"
 )
 
 // Threshold and cap of FindCandidates, from docs/specs/data-model.md (Candidatos de conflicto).
@@ -11,6 +13,18 @@ const (
 	MaxCandidates          = 3
 	previewLen             = 300
 )
+
+// Types that never enter the conflict search, on either side; rows with
+// kind=handoff are excluded too. See docs/specs/data-model.md (Candidatos de conflicto).
+var candidateExcludedTypes = []string{"session_summary", "handoff"}
+
+var candidateTypeFilter = "o.type NOT IN (" +
+	strings.TrimSuffix(strings.Repeat("?, ", len(candidateExcludedTypes)), ", ") +
+	") AND o.kind IS NOT ?"
+
+func excludedFromCandidates(typ string, kind sql.NullString) bool {
+	return slices.Contains(candidateExcludedTypes, typ) || kind.String == KindHandoff
+}
 
 type Candidate struct {
 	SyncID     string
@@ -42,11 +56,15 @@ func (s *Store) FindCandidates(ctx context.Context, syncID string) ([]Candidate,
 }
 
 func findCandidates(ctx context.Context, tx *sql.Tx, id int64) ([]Candidate, error) {
-	var title, project, scope string
-	err := tx.QueryRowContext(ctx, `SELECT title, project, scope FROM observations WHERE id = ?`, id).
-		Scan(&title, &project, &scope)
+	var title, project, scope, typ string
+	var kind sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT title, project, scope, type, kind FROM observations WHERE id = ?`, id).
+		Scan(&title, &project, &scope, &typ, &kind)
 	if err != nil {
 		return nil, err
+	}
+	if excludedFromCandidates(typ, kind) {
+		return nil, nil
 	}
 	match, err := observationMatch(title, MatchAny)
 	if err != nil {
@@ -64,11 +82,16 @@ func findCandidates(ctx context.Context, tx *sql.Tx, id int64) ([]Candidate, err
 	if selfRank == 0 {
 		return nil, nil
 	}
+	args := []any{match, project, scope, id}
+	for _, t := range candidateExcludedTypes {
+		args = append(args, t)
+	}
+	args = append(args, KindHandoff, MaxCandidates)
 	rows, err := tx.QueryContext(ctx, `SELECT o.sync_id, o.title, o.type, o.project, o.created_at, o.content, f.rank
 		FROM observations_fts f JOIN observations o ON o.id = f.rowid
 		WHERE observations_fts MATCH ? AND o.project = ? AND o.scope = ?
-		  AND o.deleted_at IS NULL AND o.id != ?
-		ORDER BY f.rank LIMIT ?`, match, project, scope, id, MaxCandidates)
+		  AND o.deleted_at IS NULL AND o.id != ? AND `+candidateTypeFilter+`
+		ORDER BY f.rank LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
