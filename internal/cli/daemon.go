@@ -178,10 +178,18 @@ var startDaemon = func(addr string) error {
 	cmd := exec.Command(exe, "serve", "--addr", addr, "--db", defaultDB())
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	_, err = startReaped(cmd)
+	return err
+}
+
+// startReaped starts cmd and returns its pid, waiting for it in the
+// background: Release alone leaves a zombie while this process lives (neugram mcp).
+func startReaped(cmd *exec.Cmd) (int, error) {
 	if err := cmd.Start(); err != nil {
-		return err
+		return 0, err
 	}
-	return cmd.Process.Release()
+	go cmd.Wait()
+	return cmd.Process.Pid, nil
 }
 
 // ensureDaemon follows the lifecycle of docs/specs/hooks.md: a daemon of
