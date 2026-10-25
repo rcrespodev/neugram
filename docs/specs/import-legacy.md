@@ -97,33 +97,40 @@ identity". Las keys de `topic_key` son 31; 28 tienen identity.
 
 ### Jerarquía
 
-Todas las tareas importadas entran como épicos: `parent_task_id NULL`, nivel 1.
-El legacy no tiene dónde declarar un padre —`topic_key` es plano y el pie
-`**Task**` nombra una sola key—, así que no hay árbol que reconstruir y los
-triggers de profundidad de `specs/data-model.md` no se disparan ni una vez.
+`parent_task_id` se arma al importar, en este orden, sobre el texto de
+`**Product**` (decisión del usuario del 2026-10-20):
 
-Hay un indicio y se deja pasar a propósito: cuatro identities meten el padre
-adentro de la prosa de `**Product**` (`Microservices (react) · parent
-TRIPULSE-3652`, `Portal / Administración Clientes (padre TRIPULSE-3242)`).
-El resumen reconoce `parent <KEY>`, `padre <KEY>`, `subtarea de <KEY>`,
-`epic <KEY>` y `épica <KEY>` (no una key suelta entre paréntesis), y descarta
-el indicio que nombra a la propia tarea.
-Es el mismo caso que el producto —prosa libre, no contrato— y la decisión es la
-misma: el import no adivina. La cadena original entera queda en `tasks.notes`,
-así que el indicio sobrevive al import y el resumen lo lista. Armar el árbol es
-trabajo manual del usuario con `task mv <key> --parent <key>` después del paso
-1b, que es exactamente para lo que ese comando existe.
+1. **Indicio explícito.** El resumen reconoce `parent <KEY>`, `padre <KEY>`,
+   `subtarea de <KEY>`, `epic <KEY>` y `épica <KEY>` (no una key suelta entre
+   paréntesis) y descarta el que nombra a la propia tarea. Si la key existe en
+   el store, es el padre. Si no (`subtarea de 869eknv3x`, un id de ClickUp sin
+   tarea), no hay padre por esa vía y el indicio se lista en el resumen.
+2. **Regla de producto.** Sin indicio válido, la tabla `productParentRules`
+   (`internal/legacy/parse.go`) asigna padre según el texto del producto. Hoy
+   una sola regla: un producto que contiene `socios de negocio` cuelga de
+   TRIPULSE-3945, que no es hija de sí misma. Cubre lo que el regex no capta:
+   `TRIPULSE-3945 Socios de negocio` (key antes del texto) y las variantes sin
+   key (`Integración de socios de negocio (integrator)`).
+3. **Todo lo demás es épico** suelto dentro de `tripulse`.
+
+Respeta el tope de 3 niveles de `specs/data-model.md`: un padre que dejaría a la
+tarea en el nivel 4 o cerraría un ciclo se descarta y se lista en el resumen,
+así los triggers no se disparan. El padre se escribe en un `UPDATE` posterior
+al insert de las tareas, también en un reimport, que recalcula el árbol entero.
 
 ### Productos
 
-`**Product**` es prosa libre: 28 identities traen 23 valores distintos para lo
-que son un puñado de productos (`Microservices (react) · parent TRIPULSE-3652`,
-`Portal / Administración Clientes (padre TRIPULSE-3242)`). El import normaliza
-tomando el segmento anterior al primer ` · `, ` — `, ` / ` o ` (`, con lo que
-quedan 13, y guarda la cadena original completa en `tasks.notes`. El resumen
-imprime el mapeo entero para que el usuario consolide después con el CLI.
-Ninguna heurística acierta acá: la decisión es que el import no pierda el dato
-original y no pretenda adivinar.
+`**Product**` es prosa libre: 28 identities traen 23 valores distintos (45
+sobre la base de 2026-10-25) para lo que son tres productos. El import toma el
+segmento anterior al primer ` · `, ` — `, ` / ` o ` (`; si es `ai-review` o
+`engram-fork` (sin distinguir mayúsculas) ese es el producto, y cualquier otra
+cosa va a `tripulse`. Decisión del usuario del 2026-10-20; antes se normalizaba
+a 13 productos y la consolidación quedaba para después con el CLI.
+
+La cadena original completa queda como primera línea de `tasks.notes`, con el
+prefijo `[import-legacy] **Product** original:` para que se lea como
+procedencia y no como una nota escrita por el usuario; el contenido libre de la
+identity sigue debajo. El resumen imprime el mapeo cadena original → producto.
 
 ## Fase 3 — pies `**Task**`
 
@@ -181,9 +188,10 @@ sesiones      2.313
 observaciones 6.536   (269 registros de control no importados como observación)
 prompts       4.650
 relaciones      353   (334 juzgadas, 19 pendientes)
-tareas           31   28 con identity · 3 creadas desde pin/wt/handoff · 31 como épico
-                      4 con indicio de padre en **Product**: <lista de keys>
-productos        13   (desde 23 cadenas; mapeo abajo)
+tareas           31   28 con identity · 3 creadas desde pin/wt/handoff · N como épico
+                      N con padre por indicio en **Product** · N por regla de producto
+                      N indicios de padre a una key sin tarea, sin padre: <lista>
+productos         3   (desde 23 cadenas; mapeo abajo)
 pins            126   (101 con tarea, 25 none)
 worktrees        82   (62 vivos, 20 muertos) · 1 registro sin path parseable
 handoffs         62   vinculados a tarea y sesión
@@ -191,6 +199,12 @@ pies          1.195   1.059 con tarea · 136 ninguna · 1 sin key resoluble
 tasks→obs         9   registros del project tasks sin forma de control, importados como observación: <lista>
 hash          3.000   normalized_hash recomputado · 0 discrepancias
 ```
+
+Con el snapshot del 2026-10-25 (89 tareas, 80 con identity): 3 productos
+desde 45 cadenas (`tripulse` 78 tareas, `ai-review` 1, `engram-fork` 1, 9 sin
+producto por no tener identity); 48 tareas con padre (23 por indicio, 25 por
+la regla de socios de negocio; 42 cuelgan de TRIPULSE-3945) y 41 épicos; un
+indicio sin tarea (TRIPULSE-3909 → 869eknv3x).
 
 Medido de nuevo el 2026-10-19 sobre un snapshot de 8.571 observaciones. Las
 diferencias son crecimiento de la base, no cambio de semántica: sesiones 2.492;
