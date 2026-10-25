@@ -22,6 +22,7 @@ type Options struct {
 	LogPath string
 
 	afterStoreClose func()
+	wrapHandler     func(http.Handler) http.Handler
 }
 
 // Server is the daemon's HTTP surface; the store it wraps is the only

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"syscall"
 	"time"
 
@@ -15,10 +16,9 @@ import (
 // daemon's lock (docs/specs/hooks.md).
 var ErrAddrInUse = errors.New("address already in use")
 
-const (
-	shutdownGrace = 5 * time.Second
-	idleTimeout   = 60 * time.Second
-)
+const idleTimeout = 60 * time.Second
+
+var shutdownGrace = 5 * time.Second
 
 // keepOpen makes http.Server.Shutdown leave the port bound: Run releases it
 // only after the store is closed, so a replacement never meets a live writer.
@@ -50,7 +50,12 @@ func Run(ctx context.Context, addr string, opts Options, ready func(net.Addr)) e
 	defer st.Close()
 
 	s := New(st, opts)
-	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: idleTimeout}
+	var inflight sync.WaitGroup
+	handler := s.Handler()
+	if opts.wrapHandler != nil {
+		handler = opts.wrapHandler(handler)
+	}
+	srv := &http.Server{Handler: trackInflight(&inflight, handler), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: idleTimeout}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(keepOpen{ln}) }()
 	if ready != nil {
@@ -66,10 +71,29 @@ func Run(ctx context.Context, addr string, opts Options, ready func(net.Addr)) e
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
+		srv.Close()
+		waitFor(&inflight, shutdownGrace)
 		return err
 	}
 	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+func trackInflight(wg *sync.WaitGroup, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wg.Add(1)
+		defer wg.Done()
+		h.ServeHTTP(w, r)
+	})
+}
+
+func waitFor(wg *sync.WaitGroup, d time.Duration) {
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+	}
 }
