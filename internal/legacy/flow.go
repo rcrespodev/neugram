@@ -29,6 +29,9 @@ type taskRow struct {
 	product                string
 	trackerKind, trackerID string
 	trackerURL, notes      string
+	parentHint, parentRule string
+	parent                 *taskRow
+	parentFromHint         bool
 	createdAt, updatedAt   string
 	dbID                   string
 }
@@ -161,6 +164,9 @@ func (im *importer) importFlow(ctx context.Context) error {
 	if err := im.writeTasks(ctx, m); err != nil {
 		return err
 	}
+	if err := im.writeParents(ctx, m); err != nil {
+		return err
+	}
 	if err := im.writePins(ctx, pins, pinOrder); err != nil {
 		return err
 	}
@@ -224,9 +230,7 @@ func (im *importer) applyIdentity(m *flowModel, r *controlRow) {
 	}
 	t.product, t.notes = id.product, id.notes
 	t.trackerKind, t.trackerID, t.trackerURL = id.trackerKind, id.trackerID, id.trackerURL
-	if id.parentHintedKey != "" && !strings.EqualFold(id.parentHintedKey, key) {
-		im.sum.ParentHints = append(im.sum.ParentHints, key+" → "+id.parentHintedKey)
-	}
+	t.parentHint, t.parentRule = id.parentHintedKey, id.parentRuleKey
 	m.touch(t, r.createdAt, r.updatedAt)
 }
 
@@ -321,7 +325,68 @@ func (im *importer) writeTasks(ctx context.Context, m *flowModel) error {
 		}
 	}
 	im.sum.Products = len(productIDs)
+	return nil
+}
+
+const maxTaskLevels = 3
+
+// writeParents sets parent_task_id from the explicit **Product** hint, or
+// failing that from productParentRules. A hint naming a task that is not in
+// the store gives no parent; one that would exceed maxTaskLevels or close a
+// cycle is dropped.
+func (im *importer) writeParents(ctx context.Context, m *flowModel) error {
+	for _, t := range m.tasks {
+		t.parent, t.parentFromHint = nil, false
+		if t.parentHint != "" && !strings.EqualFold(t.parentHint, t.key) {
+			if p := m.byRef[strings.ToLower(t.parentHint)]; p != nil {
+				t.parent, t.parentFromHint = p, true
+			} else {
+				im.sum.ParentHintsUnresolved = append(im.sum.ParentHintsUnresolved, t.key+" → "+t.parentHint)
+			}
+		}
+		if t.parent == nil && t.parentRule != "" {
+			if p := m.byRef[strings.ToLower(t.parentRule)]; p != nil && p != t {
+				t.parent = p
+			}
+		}
+	}
+	for dropped := true; dropped; {
+		dropped = false
+		for _, t := range m.tasks {
+			if t.parent != nil && !withinMaxLevels(t) {
+				im.sum.ParentsDropped = append(im.sum.ParentsDropped, t.key+" → "+t.parent.key)
+				t.parent, dropped = nil, true
+			}
+		}
+	}
+	for _, t := range m.tasks {
+		var parentID sql.NullString
+		if t.parent != nil {
+			parentID = sql.NullString{String: t.parent.dbID, Valid: true}
+			if t.parentFromHint {
+				im.sum.ParentsFromHint++
+			} else {
+				im.sum.ParentsFromRule++
+			}
+		}
+		if _, err := im.exec(ctx, "UPDATE tasks SET parent_task_id = ? WHERE id = ?", parentID, t.dbID); err != nil {
+			return fmt.Errorf("parent of %s: %w", t.key, err)
+		}
+	}
 	return im.tx.QueryRowContext(ctx, "SELECT count(*) FROM tasks WHERE parent_task_id IS NULL").Scan(&im.sum.Epics)
+}
+
+// withinMaxLevels is false when t's chain of parents loops or t sits deeper
+// than maxTaskLevels.
+func withinMaxLevels(t *taskRow) bool {
+	level := 1
+	for p := t.parent; p != nil; p = p.parent {
+		level++
+		if p == t || level > maxTaskLevels {
+			return false
+		}
+	}
+	return true
 }
 
 func (im *importer) upsertProduct(ctx context.Context, name string) (string, error) {

@@ -105,6 +105,7 @@ type identity struct {
 	trackerURL      string
 	notes           string
 	parentHintedKey string
+	parentRuleKey   string
 }
 
 func parseIdentity(content string) identity {
@@ -134,6 +135,7 @@ func parseIdentity(content string) identity {
 		if m := parentHint.FindStringSubmatch(id.product); m != nil {
 			id.parentHintedKey = m[1]
 		}
+		id.parentRuleKey = productParentKey(id.product)
 	}
 	if body != "" {
 		notes = append(notes, body)
@@ -167,6 +169,22 @@ const (
 // personalProducts are the only products kept apart; every other **Product**
 // string belongs to workProduct (docs/specs/import-legacy.md, Productos).
 var personalProducts = []string{"ai-review", "engram-fork"}
+
+// productParentRules assign a parent to tasks whose **Product** text names a
+// workstream, for the tasks that carry no explicit parent hint.
+var productParentRules = []struct{ productContains, parentKey string }{
+	{"socios de negocio", "TRIPULSE-3945"},
+}
+
+func productParentKey(product string) string {
+	lower := strings.ToLower(product)
+	for _, r := range productParentRules {
+		if strings.Contains(lower, r.productContains) {
+			return r.parentKey
+		}
+	}
+	return ""
+}
 
 // canonicalProduct maps a free-text **Product** to its product name.
 func canonicalProduct(s string) string {

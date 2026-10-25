@@ -18,10 +18,12 @@ type Summary struct {
 	Relations, RelationsJudged, RelationsPending    int
 	RelationsSkipped                                []string
 
-	Tasks, TasksWithIdentity, Epics int
-	TasksWithoutIdentity            []string
-	ParentHints                     []string
-	StatusWarnings                  []string
+	Tasks, TasksWithIdentity, Epics  int
+	TasksWithoutIdentity             []string
+	ParentsFromHint, ParentsFromRule int
+	ParentHintsUnresolved            []string
+	ParentsDropped                   []string
+	StatusWarnings                   []string
 
 	Products   int
 	ProductMap map[string]string
@@ -83,7 +85,13 @@ func (s *Summary) Write(w io.Writer) {
 		fmtInt(s.RelationsJudged), fmtInt(s.RelationsPending), len(s.RelationsSkipped))
 	line("tareas", s.Tasks, "%d con identity · %d creadas sin identity · %d como épico",
 		s.TasksWithIdentity, len(s.TasksWithoutIdentity), s.Epics)
-	more("%d con indicio de padre en **Product**: %s", len(s.ParentHints), list(s.ParentHints))
+	more("%d con padre por indicio en **Product** · %d por regla de producto", s.ParentsFromHint, s.ParentsFromRule)
+	if len(s.ParentHintsUnresolved) > 0 {
+		more("%d indicios de padre a una key sin tarea, sin padre: %s", len(s.ParentHintsUnresolved), list(s.ParentHintsUnresolved))
+	}
+	if len(s.ParentsDropped) > 0 {
+		more("%d padres descartados por tope de %d niveles o ciclo: %s", len(s.ParentsDropped), maxTaskLevels, list(s.ParentsDropped))
+	}
 	if len(s.StatusWarnings) > 0 {
 		more("%d status fuera del enum, quedan en todo: %s", len(s.StatusWarnings), list(s.StatusWarnings))
 	}

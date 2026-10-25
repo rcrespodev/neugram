@@ -147,3 +147,17 @@ func TestParseProgressToleratesLegacyShapes(t *testing.T) {
 		t.Error("unknown role accepted")
 	}
 }
+
+func TestProductParentRule(t *testing.T) {
+	cases := map[string]string{
+		"TRIPULSE-3945 Socios de negocio":                        "TRIPULSE-3945",
+		"Integración de socios de negocio (integrator)":          "TRIPULSE-3945",
+		"Socios de negocio: SAP → GCP → canales (TRIPULSE-3945)": "TRIPULSE-3945",
+		"Microservices (react)":                                  "",
+	}
+	for product, want := range cases {
+		if got := productParentKey(product); got != want {
+			t.Errorf("productParentKey(%q) = %q, want %q", product, got, want)
+		}
+	}
+}

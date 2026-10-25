@@ -226,8 +226,8 @@ func TestImportCopiesMemoryAndFlow(t *testing.T) {
 	if !strings.Contains(notes, "[import-legacy] **Product** original: Microservices (react) · parent TRIPULSE-3652") || !strings.Contains(notes, "Contexto libre.") {
 		t.Errorf("notes = %q", notes)
 	}
-	if got := scalar[int](t, db, "SELECT count(*) FROM tasks WHERE parent_task_id IS NOT NULL"); got != 0 {
-		t.Errorf("tasks with parent = %d", got)
+	if got := scalar[string](t, db, `SELECT p.key FROM tasks t JOIN tasks p ON p.id = t.parent_task_id WHERE t.key = 'TRIPULSE-3831'`); got != "TRIPULSE-3652" {
+		t.Errorf("parent of TRIPULSE-3831 = %q", got)
 	}
 	if got := scalar[string](t, db, "SELECT status FROM tasks WHERE key = 'engram-fork-debat'"); got != "todo" {
 		t.Errorf("non-enum status = %q", got)
@@ -282,7 +282,7 @@ func TestImportCopiesMemoryAndFlow(t *testing.T) {
 	want := map[string]int{"sessions": 4, "observations": 6, "control": 18, "prompts": 2, "relations": 3,
 		"judged": 2, "pending": 1, "tasks": 4, "identity": 2, "products": 2, "pins": 4, "pinsTask": 2, "pinsNone": 1,
 		"worktrees": 3, "alive": 1, "dead": 2, "handoffs": 1, "progress": 1, "footers": 6, "footersTask": 4,
-		"footersNone": 1, "hash": 24, "plain": 2, "overwritten": 1, "epics": 4}
+		"footersNone": 1, "hash": 24, "plain": 2, "overwritten": 1, "epics": 3}
 	got := map[string]int{"sessions": sum.Sessions, "observations": sum.Observations, "control": sum.ControlRecords,
 		"prompts": sum.Prompts, "relations": sum.Relations, "judged": sum.RelationsJudged,
 		"pending": sum.RelationsPending, "tasks": sum.Tasks, "identity": sum.TasksWithIdentity,
@@ -299,7 +299,7 @@ func TestImportCopiesMemoryAndFlow(t *testing.T) {
 	if strings.Join(sum.TasksWithoutIdentity, ",") != "TRIPULSE-3847,TRIPULSE-3652" {
 		t.Errorf("without identity = %v", sum.TasksWithoutIdentity)
 	}
-	if len(sum.ParentHints) != 1 || len(sum.PinsMissingSession) != 1 || len(sum.WorktreesUnparseable) != 1 ||
+	if sum.ParentsFromHint != 1 || len(sum.PinsMissingSession) != 1 || len(sum.WorktreesUnparseable) != 1 ||
 		len(sum.ProgressSkipped) != 1 || len(sum.FootersUnresolved) != 1 || len(sum.RelationsSkipped) != 1 ||
 		len(sum.StatusWarnings) != 1 || sum.RelationsSkipped[0] != "rel-4" {
 		t.Errorf("lists = %+v", sum)
@@ -576,5 +576,64 @@ func TestTargetWithOtherSchemaVersionIsRejected(t *testing.T) {
 	_, err := Import(context.Background(), Options{LegacyPath: f.path(), TargetPath: target})
 	if err == nil || !strings.Contains(err.Error(), "schema_version 2") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func identityContent(key, product string) string {
+	return "**Task**: " + key + " — título\n**Product**: " + product
+}
+
+func TestImportBuildsHierarchyFromHintsAndProductRule(t *testing.T) {
+	f := newFixture(t)
+	f.seed()
+	for key, product := range map[string]string{
+		"TRIPULSE-3945": "Integración de socios de negocio (integrator, react)",
+		"TRIPULSE-3947": "Integración de socios de negocio (integrator) · subtarea de TRIPULSE-3945",
+		"TRIPULSE-3963": "TRIPULSE-3945 Socios de negocio",
+		"TRIPULSE-3962": "Socios de negocio: SAP → GCP → canales (TRIPULSE-3945)",
+		"TRIPULSE-3909": "Soporte Chile / Integración SAP-Magento (subtarea de 869eknv3x, lista MS Sprint 7)",
+		"TRIPULSE-3500": "Microservices",
+		"CHAIN-A":       "Microservices (padre CHAIN-B)",
+		"CHAIN-B":       "Microservices (padre CHAIN-C)",
+		"CHAIN-C":       "Microservices (padre CHAIN-D)",
+		"CHAIN-D":       "Microservices",
+	} {
+		f.obs("manual-save-tasks", "tasks", "task/"+strings.ToLower(key)+"/identity", "identity", identityContent(key, product))
+	}
+	target := filepath.Join(t.TempDir(), "neugram.db")
+	sum := runImport(t, f.path(), target, false)
+	db := openTarget(t, target)
+
+	parents := map[string]string{}
+	rows, err := db.Query(`SELECT t.key, coalesce(p.key, '') FROM tasks t LEFT JOIN tasks p ON p.id = t.parent_task_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var k, p string
+		if err := rows.Scan(&k, &p); err != nil {
+			t.Fatal(err)
+		}
+		parents[k] = p
+	}
+	rows.Close()
+	want := map[string]string{
+		"TRIPULSE-3945": "", "TRIPULSE-3947": "TRIPULSE-3945", "TRIPULSE-3963": "TRIPULSE-3945",
+		"TRIPULSE-3962": "TRIPULSE-3945", "TRIPULSE-3909": "", "TRIPULSE-3500": "",
+		"CHAIN-A": "", "CHAIN-B": "CHAIN-C", "CHAIN-C": "CHAIN-D", "CHAIN-D": "",
+	}
+	for k, w := range want {
+		if parents[k] != w {
+			t.Errorf("parent of %s = %q, want %q", k, parents[k], w)
+		}
+	}
+	if sum.ParentsFromHint != 4 || sum.ParentsFromRule != 2 {
+		t.Errorf("from hint %d, from rule %d", sum.ParentsFromHint, sum.ParentsFromRule)
+	}
+	if strings.Join(sum.ParentHintsUnresolved, ",") != "TRIPULSE-3909 → 869eknv3x" {
+		t.Errorf("unresolved hints = %v", sum.ParentHintsUnresolved)
+	}
+	if strings.Join(sum.ParentsDropped, ",") != "CHAIN-A → CHAIN-B" {
+		t.Errorf("dropped = %v", sum.ParentsDropped)
 	}
 }
