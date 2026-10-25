@@ -18,6 +18,7 @@ ensureDaemon()
 ```
 
 - El puerto es el lock. `serve` hace el bind de `127.0.0.1:7438` antes de abrir la base; si el bind falla porque otro `serve` ganó la carrera, sale con 0 sin tocar nada.
+- Al apagarse (`/shutdown` o señal) `serve` cierra la base —checkpoint del WAL— y recién después suelta el puerto, así el reemplazo nunca abre la base con el viejo aún escribiendo.
 - El chequeo de versión existe porque el daemon queda residente: después de `make install` el binario nuevo reemplaza al viejo en la primera llamada.
 - Fail-open: si el daemon no responde a los 2 s, el hook escribe el motivo en stderr y sale con 0 sin salida. neugram caído nunca bloquea un turno ni una sesión; `neugram doctor` es quien lo reporta.
 

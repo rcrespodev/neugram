@@ -20,6 +20,8 @@ type Options struct {
 	Version string
 	DBPath  string
 	LogPath string
+
+	afterStoreClose func()
 }
 
 // Server is the daemon's HTTP surface; the store it wraps is the only

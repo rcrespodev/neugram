@@ -20,27 +20,39 @@ const (
 	idleTimeout   = 60 * time.Second
 )
 
+// keepOpen makes http.Server.Shutdown leave the port bound: Run releases it
+// only after the store is closed, so a replacement never meets a live writer.
+type keepOpen struct{ *net.TCPListener }
+
+func (k keepOpen) Close() error { return k.SetDeadline(time.Now()) }
+
 // Run binds addr before opening opts.DBPath, then serves until ctx ends or a
 // client calls POST /shutdown. ready, when not nil, receives the bound address.
 func Run(ctx context.Context, addr string, opts Options, ready func(net.Addr)) error {
-	ln, err := net.Listen("tcp", addr)
+	nl, err := net.Listen("tcp", addr)
 	if errors.Is(err, syscall.EADDRINUSE) {
 		return ErrAddrInUse
 	}
 	if err != nil {
 		return err
 	}
+	ln := nl.(*net.TCPListener)
+	defer ln.Close()
 	st, err := store.Open(opts.DBPath)
 	if err != nil {
-		ln.Close()
 		return err
 	}
+	defer func() {
+		if opts.afterStoreClose != nil {
+			opts.afterStoreClose()
+		}
+	}()
 	defer st.Close()
 
 	s := New(st, opts)
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: idleTimeout}
 	served := make(chan error, 1)
-	go func() { served <- srv.Serve(ln) }()
+	go func() { served <- srv.Serve(keepOpen{ln}) }()
 	if ready != nil {
 		ready(ln.Addr())
 	}
