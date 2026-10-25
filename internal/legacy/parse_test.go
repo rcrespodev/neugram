@@ -37,18 +37,29 @@ func TestLastFooterIgnoresTrailingBlankLines(t *testing.T) {
 	}
 }
 
-func TestNormalizeProduct(t *testing.T) {
+func TestCanonicalProduct(t *testing.T) {
 	cases := map[string]string{
-		"Microservices (react) · parent TRIPULSE-3652":           "Microservices",
-		"Portal / Administración Clientes (padre TRIPULSE-3242)": "Portal",
-		"Tripulse — microservicios":                              "Tripulse",
-		"Socios de negocio: SAP → GCP":                           "Socios de negocio: SAP → GCP",
+		"Microservices (react) · parent TRIPULSE-3652":           "tripulse",
+		"Portal / Administración Clientes (padre TRIPULSE-3242)": "tripulse",
+		"Portal B2B - Vicsa Chile":                               "tripulse",
+		"Soporte Chile / Integración SAP-Magento":                "tripulse",
+		"TRIPULSE-3945 Socios de negocio":                        "tripulse",
+		"dev-loop":                                               "tripulse",
 		"engram-fork":                                            "engram-fork",
+		"Engram-Fork (debate)":                                   "engram-fork",
+		"ai-review":                                              "ai-review",
 	}
 	for in, want := range cases {
-		if got := normalizeProduct(in); got != want {
-			t.Errorf("normalizeProduct(%q) = %q, want %q", in, got, want)
+		if got := canonicalProduct(in); got != want {
+			t.Errorf("canonicalProduct(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestIdentityNotesMarkProductAsProvenance(t *testing.T) {
+	id := parseIdentity("**Task**: X-1 — t\n**Product**: Microservices (react)\n\nContexto libre.")
+	if want := "[import-legacy] **Product** original: Microservices (react)\n\nContexto libre."; id.notes != want {
+		t.Errorf("notes = %q, want %q", id.notes, want)
 	}
 }
 

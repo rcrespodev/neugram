@@ -281,7 +281,7 @@ func (im *importer) writeTasks(ctx context.Context, m *flowModel) error {
 	for _, t := range m.tasks {
 		var productID sql.NullString
 		if t.product != "" {
-			name := normalizeProduct(t.product)
+			name := canonicalProduct(t.product)
 			if _, seen := im.sum.ProductMap[t.product]; !seen {
 				im.sum.addProduct(t.product, name)
 			}

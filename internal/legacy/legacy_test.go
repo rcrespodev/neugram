@@ -217,13 +217,13 @@ func TestImportCopiesMemoryAndFlow(t *testing.T) {
 		Scan(&title, &status, &product, &notes, &tracker); err != nil {
 		t.Fatal(err)
 	}
-	if title != "Arreglar suites — de react" || status != "review" || product != "Microservices" {
+	if title != "Arreglar suites — de react" || status != "review" || product != "tripulse" {
 		t.Errorf("task = %q %q %q", title, status, product)
 	}
 	if tracker != "clickup 869eqyrxm https://app.clickup.com/t/869eqyrxm" {
 		t.Errorf("tracker = %q", tracker)
 	}
-	if !strings.Contains(notes, "Microservices (react) · parent TRIPULSE-3652") || !strings.Contains(notes, "Contexto libre.") {
+	if !strings.Contains(notes, "[import-legacy] **Product** original: Microservices (react) · parent TRIPULSE-3652") || !strings.Contains(notes, "Contexto libre.") {
 		t.Errorf("notes = %q", notes)
 	}
 	if got := scalar[int](t, db, "SELECT count(*) FROM tasks WHERE parent_task_id IS NOT NULL"); got != 0 {
@@ -497,7 +497,7 @@ func TestSummaryWritesSpecLines(t *testing.T) {
 	var b strings.Builder
 	sum.Write(&b)
 	for _, want := range []string{"sesiones", "observaciones", "(15 registros de control", "tasks→obs", "pies", "hash",
-		"Microservices (react) · parent TRIPULSE-3652 → Microservices"} {
+		"Microservices (react) · parent TRIPULSE-3652 → tripulse"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("summary misses %q:\n%s", want, b.String())
 		}

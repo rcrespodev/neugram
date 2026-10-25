@@ -130,7 +130,7 @@ func parseIdentity(content string) identity {
 	body := strings.TrimSpace(strings.Join(rest, "\n"))
 	var notes []string
 	if id.product != "" {
-		notes = append(notes, "**Product**: "+id.product)
+		notes = append(notes, provenanceNotePrefix+id.product)
 		if m := parentHint.FindStringSubmatch(id.product); m != nil {
 			id.parentHintedKey = m[1]
 		}
@@ -157,16 +157,32 @@ func parseTracker(v string) (kind, id, url string) {
 	return kind, id, url
 }
 
-// normalizeProduct keeps the segment before the first separator listed in
-// docs/specs/import-legacy.md (Productos).
-func normalizeProduct(s string) string {
+const (
+	workProduct = "tripulse"
+	// provenanceNotePrefix marks the original **Product** text in tasks.notes
+	// as import provenance, not as a note the user wrote.
+	provenanceNotePrefix = "[import-legacy] **Product** original: "
+)
+
+// personalProducts are the only products kept apart; every other **Product**
+// string belongs to workProduct (docs/specs/import-legacy.md, Productos).
+var personalProducts = []string{"ai-review", "engram-fork"}
+
+// canonicalProduct maps a free-text **Product** to its product name.
+func canonicalProduct(s string) string {
 	cut := len(s)
 	for _, sep := range []string{" · ", " — ", " / ", " ("} {
 		if i := strings.Index(s, sep); i >= 0 && i < cut {
 			cut = i
 		}
 	}
-	return strings.TrimSpace(s[:cut])
+	head := strings.TrimSpace(s[:cut])
+	for _, p := range personalProducts {
+		if strings.EqualFold(head, p) {
+			return p
+		}
+	}
+	return workProduct
 }
 
 func parseStatus(content string) (string, bool) {
