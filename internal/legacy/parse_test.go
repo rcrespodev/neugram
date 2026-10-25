@@ -44,10 +44,11 @@ func TestCanonicalProduct(t *testing.T) {
 		"Portal B2B - Vicsa Chile":                               "tripulse",
 		"Soporte Chile / Integración SAP-Magento":                "tripulse",
 		"TRIPULSE-3945 Socios de negocio":                        "tripulse",
-		"dev-loop":                                               "tripulse",
 		"engram-fork":                                            "engram-fork",
 		"Engram-Fork (debate)":                                   "engram-fork",
 		"ai-review":                                              "ai-review",
+		"dev-loop":                                               "dev-loop",
+		"Dev-Loop (workflow)":                                    "dev-loop",
 	}
 	for in, want := range cases {
 		if got := canonicalProduct(in); got != want {

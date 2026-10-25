@@ -168,7 +168,7 @@ const (
 
 // personalProducts are the only products kept apart; every other **Product**
 // string belongs to workProduct (docs/specs/import-legacy.md, Productos).
-var personalProducts = []string{"ai-review", "engram-fork"}
+var personalProducts = []string{"ai-review", "dev-loop", "engram-fork"}
 
 // productParentRules assign a parent to tasks whose **Product** text names a
 // workstream, for the tasks that carry no explicit parent hint.

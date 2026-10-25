@@ -330,10 +330,8 @@ func (im *importer) writeTasks(ctx context.Context, m *flowModel) error {
 
 const maxTaskLevels = 3
 
-// writeParents sets parent_task_id from the explicit **Product** hint, or
-// failing that from productParentRules. A hint naming a task that is not in
-// the store gives no parent; one that would exceed maxTaskLevels or close a
-// cycle is dropped.
+// writeParents sets parent_task_id by the rules of docs/specs/import-legacy.md
+// (Jerarquía): explicit hint, then productParentRules, never beyond maxTaskLevels.
 func (im *importer) writeParents(ctx context.Context, m *flowModel) error {
 	for _, t := range m.tasks {
 		t.parent, t.parentFromHint = nil, false

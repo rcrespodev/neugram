@@ -121,10 +121,10 @@ al insert de las tareas, también en un reimport, que recalcula el árbol entero
 ### Productos
 
 `**Product**` es prosa libre: 28 identities traen 23 valores distintos (45
-sobre la base de 2026-10-25) para lo que son tres productos. El import toma el
-segmento anterior al primer ` · `, ` — `, ` / ` o ` (`; si es `ai-review` o
-`engram-fork` (sin distinguir mayúsculas) ese es el producto, y cualquier otra
-cosa va a `tripulse`. Decisión del usuario del 2026-10-20; antes se normalizaba
+sobre la base de 2026-10-25) para lo que son cuatro productos. El import toma el
+segmento anterior al primer ` · `, ` — `, ` / ` o ` (`; si es `ai-review`,
+`dev-loop` o `engram-fork` (sin distinguir mayúsculas) ese es el producto, y cualquier otra
+cosa va a `tripulse`. Decisión del usuario del 2026-10-20, con `dev-loop` como producto propio desde el 2026-10-25; antes se normalizaba
 a 13 productos y la consolidación quedaba para después con el CLI.
 
 La cadena original completa queda como primera línea de `tasks.notes`, con el
@@ -191,7 +191,7 @@ relaciones      353   (334 juzgadas, 19 pendientes)
 tareas           31   28 con identity · 3 creadas desde pin/wt/handoff · N como épico
                       N con padre por indicio en **Product** · N por regla de producto
                       N indicios de padre a una key sin tarea, sin padre: <lista>
-productos         3   (desde 23 cadenas; mapeo abajo)
+productos         4   (desde 23 cadenas; mapeo abajo)
 pins            126   (101 con tarea, 25 none)
 worktrees        82   (62 vivos, 20 muertos) · 1 registro sin path parseable
 handoffs         62   vinculados a tarea y sesión
@@ -200,8 +200,8 @@ tasks→obs         9   registros del project tasks sin forma de control, import
 hash          3.000   normalized_hash recomputado · 0 discrepancias
 ```
 
-Con el snapshot del 2026-10-25 (89 tareas, 80 con identity): 3 productos
-desde 45 cadenas (`tripulse` 78 tareas, `ai-review` 1, `engram-fork` 1, 9 sin
+Con el snapshot del 2026-10-25 (89 tareas, 80 con identity): 4 productos
+desde 45 cadenas (`tripulse` 77 tareas, `ai-review` 1, `dev-loop` 1, `engram-fork` 1, 9 sin
 producto por no tener identity); 48 tareas con padre (23 por indicio, 25 por
 la regla de socios de negocio; 42 cuelgan de TRIPULSE-3945) y 41 épicos; un
 indicio sin tarea (TRIPULSE-3909 → 869eknv3x).
