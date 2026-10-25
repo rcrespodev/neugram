@@ -580,14 +580,15 @@ func TestFindCandidatesWithoutTitleTerms(t *testing.T) {
 	}
 }
 
+var excludedObservations = []NewObservation{
+	{Type: "session_summary"},
+	{Type: "handoff", Kind: KindHandoff},
+	{Type: "handoff"},
+	{Type: "discovery", Kind: KindHandoff},
+}
+
 func TestFindCandidatesSkipsExcludedNewObservation(t *testing.T) {
-	cases := []NewObservation{
-		{Type: "session_summary"},
-		{Type: "handoff", Kind: KindHandoff},
-		{Type: "handoff"},
-		{Type: "discovery", Kind: KindHandoff},
-	}
-	for _, in := range cases {
+	for _, in := range excludedObservations {
 		t.Run(in.Type+"/"+in.Kind, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			save(t, s, NewObservation{Title: "Jerarquía de tareas", Content: "one"})
@@ -605,13 +606,7 @@ func TestFindCandidatesSkipsExcludedNewObservation(t *testing.T) {
 }
 
 func TestFindCandidatesNeverOffersExcludedRows(t *testing.T) {
-	cases := []NewObservation{
-		{Type: "session_summary"},
-		{Type: "handoff", Kind: KindHandoff},
-		{Type: "handoff"},
-		{Type: "discovery", Kind: KindHandoff},
-	}
-	for _, in := range cases {
+	for _, in := range excludedObservations {
 		t.Run(in.Type+"/"+in.Kind, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			kept := save(t, s, NewObservation{Title: "Jerarquía de tareas", Content: "jerarquía de tareas con tres niveles y un trigger"})

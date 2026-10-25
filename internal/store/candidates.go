@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"slices"
-	"strings"
 )
 
 // Threshold and cap of FindCandidates, from docs/specs/data-model.md (Candidatos de conflicto).
@@ -14,16 +12,16 @@ const (
 	previewLen             = 300
 )
 
-// Types that never enter the conflict search, on either side; rows with
-// kind=handoff are excluded too. See docs/specs/data-model.md (Candidatos de conflicto).
-var candidateExcludedTypes = []string{"session_summary", "handoff"}
+// Types and kind excluded on both sides: docs/specs/data-model.md (Candidatos de conflicto).
+const (
+	typeSessionSummary = "session_summary"
+	typeHandoff        = "handoff"
 
-var candidateTypeFilter = "o.type NOT IN (" +
-	strings.TrimSuffix(strings.Repeat("?, ", len(candidateExcludedTypes)), ", ") +
-	") AND o.kind IS NOT ?"
+	candidateTypeFilter = "o.type NOT IN ('" + typeSessionSummary + "', '" + typeHandoff + "') AND o.kind IS NOT ?"
+)
 
 func excludedFromCandidates(typ string, kind sql.NullString) bool {
-	return slices.Contains(candidateExcludedTypes, typ) || kind.String == KindHandoff
+	return typ == typeSessionSummary || typ == typeHandoff || kind.String == KindHandoff
 }
 
 type Candidate struct {
@@ -83,9 +81,6 @@ func findCandidates(ctx context.Context, tx *sql.Tx, id int64) ([]Candidate, err
 		return nil, nil
 	}
 	args := []any{match, project, scope, id}
-	for _, t := range candidateExcludedTypes {
-		args = append(args, t)
-	}
 	args = append(args, KindHandoff, MaxCandidates)
 	rows, err := tx.QueryContext(ctx, `SELECT o.sync_id, o.title, o.type, o.project, o.created_at, o.content, f.rank
 		FROM observations_fts f JOIN observations o ON o.id = f.rowid
