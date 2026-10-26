@@ -165,7 +165,7 @@ func TestTaskListForwardsFiltersAndReturnsDaemonJSON(t *testing.T) {
 
 func TestUnimplementedToolReportsNotImplemented(t *testing.T) {
 	cs := connect(t, daemonAt(t, http.NotFoundHandler()))
-	res, text := callText(t, cs, "mem_save", map[string]any{"session_id": "s", "title": "t", "content": "c", "type": "decision"})
+	res, text := callText(t, cs, "task_status", map[string]any{"session_id": "s", "status": "done"})
 	if !res.IsError || !strings.Contains(text, `"not_implemented"`) {
 		t.Fatalf("res = %v %s", res.IsError, text)
 	}

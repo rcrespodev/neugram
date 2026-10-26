@@ -62,7 +62,12 @@ func (s *Server) handler(name string) sdk.ToolHandler {
 		var apiErr *client.APIError
 		switch {
 		case err == nil:
-			return textResult(out, false), nil
+			res := textResult(out, false)
+			var structured map[string]any
+			if json.Unmarshal(out, &structured) == nil {
+				res.StructuredContent = structured
+			}
+			return res, nil
 		case errors.As(err, &apiErr):
 			return errorResult(apiErr), nil
 		default:
@@ -75,11 +80,19 @@ func (s *Server) handler(name string) sdk.ToolHandler {
 	}
 }
 
-// call routes a tool to the daemon. Only task_list has a route in main so
-// far; the rest report not_implemented until their handlers land.
+// call routes a tool to the daemon; tools without a handler yet report not_implemented.
 func (s *Server) call(name string, args map[string]any, out *json.RawMessage) error {
-	if name == "task_list" {
+	switch name {
+	case "task_list":
 		return s.client.Get("/tasks"+queryOf(args), out)
+	case "mem_save":
+		return s.memSave(args, out)
+	case "mem_update":
+		return s.memUpdate(args, out)
+	case "mem_search":
+		return s.memSearch(args, out)
+	case "mem_judge":
+		return s.memJudge(args, out)
 	}
 	return &client.APIError{Code: "not_implemented", Message: name + " is not implemented yet"}
 }
