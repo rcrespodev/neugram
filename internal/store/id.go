@@ -1,4 +1,4 @@
-package legacy
+package store
 
 import (
 	"crypto/rand"
@@ -8,8 +8,8 @@ import (
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// newID returns a ULID: 48 bits of Unix milliseconds and 80 random bits, in Crockford base32.
-func newID(now time.Time) string {
+// NewID returns a ULID: 48 bits of Unix milliseconds and 80 random bits, in Crockford base32.
+func NewID(now time.Time) string {
 	var b [16]byte
 	binary.BigEndian.PutUint64(b[:8], uint64(now.UnixMilli())<<16)
 	rand.Read(b[6:])

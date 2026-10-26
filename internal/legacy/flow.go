@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/rcrespodev/neugram/internal/store"
 )
 
 const pinnedByImport = "import"
@@ -308,7 +310,7 @@ func (im *importer) writeTasks(ctx context.Context, m *flowModel) error {
 			  title = excluded.title, product_id = excluded.product_id, status = excluded.status,
 			  tracker_kind = excluded.tracker_kind, tracker_id = excluded.tracker_id,
 			  tracker_url = excluded.tracker_url, notes = excluded.notes, updated_at = excluded.updated_at`,
-			newID(im.opts.Now()), t.key, t.title, productID, t.status,
+			store.NewID(im.opts.Now()), t.key, t.title, productID, t.status,
 			nullIfEmpty(t.trackerKind), nullIfEmpty(t.trackerID), nullIfEmpty(t.trackerURL), nullIfEmpty(t.notes),
 			t.createdAt, t.updatedAt)
 		if err != nil {
@@ -390,7 +392,7 @@ func withinMaxLevels(t *taskRow) bool {
 func (im *importer) upsertProduct(ctx context.Context, name string) (string, error) {
 	if _, err := im.exec(ctx,
 		"INSERT INTO products (id, name, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO NOTHING",
-		newID(im.opts.Now()), name, im.now, im.now); err != nil {
+		store.NewID(im.opts.Now()), name, im.now, im.now); err != nil {
 		return "", fmt.Errorf("product %s: %w", name, err)
 	}
 	var id string
@@ -428,7 +430,7 @@ func (im *importer) writeWorktrees(ctx context.Context, wts map[string]worktreeR
 			ON CONFLICT(path) DO UPDATE SET
 			  task_id = excluded.task_id, repo = excluded.repo, branch = excluded.branch, base = excluded.base,
 			  purpose = excluded.purpose, created_by_session = excluded.created_by_session, updated_at = excluded.updated_at`,
-			newID(im.opts.Now()), taskID(w.task), path, w.wt.Repo, w.wt.Branch, nullIfEmpty(w.wt.Base),
+			store.NewID(im.opts.Now()), taskID(w.task), path, w.wt.Repo, w.wt.Branch, nullIfEmpty(w.wt.Base),
 			nullIfEmpty(w.wt.Purpose), nullIfEmpty(w.wt.CreatedBySession), w.row.createdAt, w.row.updatedAt)
 		if err != nil {
 			return fmt.Errorf("worktree %s: %w", path, err)
@@ -530,7 +532,7 @@ func (im *importer) writeProgress(ctx context.Context, reports []pinRef) error {
 			  task_id = excluded.task_id, role = excluded.role, status = excluded.status, title = excluded.title,
 			  summary = excluded.summary, next_steps = excluded.next_steps, refs = excluded.refs,
 			  updated_at = excluded.updated_at`,
-			newID(im.opts.Now()), r.ref.session, r.ref.slot, taskID(p.task), role, report.Status, r.title,
+			store.NewID(im.opts.Now()), r.ref.session, r.ref.slot, taskID(p.task), role, report.Status, r.title,
 			string(summary), string(next), refs, r.createdAt, r.updatedAt)
 		if err != nil {
 			return fmt.Errorf("progress %s: %w", r.topicKey, err)

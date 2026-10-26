@@ -3,6 +3,8 @@ package legacy
 import (
 	"testing"
 	"time"
+
+	"github.com/rcrespodev/neugram/internal/store"
 )
 
 func TestParseFooter(t *testing.T) {
@@ -127,7 +129,7 @@ func TestParentHints(t *testing.T) {
 }
 
 func TestNewIDEncodesULIDTimestamp(t *testing.T) {
-	id := newID(timeAt(1469918176385))
+	id := store.NewID(timeAt(1469918176385))
 	if len(id) != 26 || id[:10] != "01ARYZ6S41" {
 		t.Errorf("id = %q", id)
 	}
