@@ -112,9 +112,13 @@ cuyos casos se portan como tests) más la lista siguiente. Un turno **mutó** si
 tiene alguna de estas llamadas con `tool_result` sin `is_error`:
 
 - `Edit`, `Write`, `MultiEdit`, `NotebookEdit` sobre un path no scratch.
-- `Bash` con `git commit`, `git push`, `gh pr create`, `gh issue create`: durables sin importar el path.
-- `Bash` con una redirección `>`/`>>` a un archivo (no `2>`, `&>`, `>&2` ni `/dev/null`), `sed -i`, `tee`, `mv`, `rm`, `mkdir`, `touch`, `go mod`, `npm i`: mutan según el path que nombran. El cuerpo de un heredoc es dato, no sintaxis.
-- `git worktree add` y `EnterWorktree`: además disparan `require-worktree-registered`. Un path relativo de `git worktree add` se resuelve con el campo `cwd` de la entrada del transcript donde aparece.
+- `Bash` con `git commit`, `git push`, `gh pr create`, `gh issue create`: durables sin importar el path. Se reconocen por tokens, saltando las flags globales de git (`-C`, `-c`, `--git-dir`, `--work-tree`, `--no-pager`…); un texto citado (`echo "git commit"`) no cuenta.
+- `Bash` con una redirección `>`, `>>`, `>|`, `&>`, `&>>` a un archivo (no `2>&1`, `>&2` ni `/dev/null`), `tee`, `sed -i`/`--in-place`, `perl -pi`/`-i`, `mv`, `rm`, `mkdir`, `touch`: mutan según el path que nombran. `cp`, `ln` e `install` mutan solo su destino (último argumento o `-t`). `go mod`, `go get`, `npm`/`pnpm`/`yarn` `install|i|add|ci` y `pip install` mutan sin path. `chmod` queda afuera.
+- Las redirecciones se leen solo de los tokens fuera de comillas (`"a -> b"` no es una redirección) y el cuerpo de un heredoc es dato, no sintaxis; `1 << 2` no abre un heredoc.
+- Las palabras de shell antes del comando (`do`, `then`, `{`, `(`, `time`, `sudo`, `env`, `xargs`, asignaciones `X=1`) no esconden la mutación. `cd <dir>` antes del comando resuelve los paths relativos contra `<dir>`.
+- `git worktree add` y `EnterWorktree`: además disparan `require-worktree-registered`. Un path relativo de `git worktree add` se resuelve con el campo `cwd` de la entrada del transcript donde aparece (y con `git -C`).
+
+**Paths no expandibles.** Un path con `$VAR`, `$(…)` o backtick no se resuelve contra el `cwd`. Si el target de una mutación no se puede expandir, cuenta como mutación no scratch (salvo que el texto crudo ya contenga una parte scratch, como `/tmp/$f`) y sale con `Unresolved: true` y el texto crudo en `Path`. Un `git worktree add` con path no expandible sale con `Path` vacío y `Unresolved: true`; el gate decide qué hacer con un worktree que no puede comparar contra un `wt` registrado.
 
 Se ignoran los paths bajo `/scratchpad/`, `/tmp/`, `/.git/` y `/node_modules/`:
 es trabajo descartable, no un entregable.

@@ -318,10 +318,21 @@ var pathCommands = map[string]map[string]bool{
 	"touch": {"-d": true, "-r": true, "-t": true, "--date": true, "--reference": true},
 }
 
+// Commands that only change their destination: the last positional, or the -t directory.
+var destinationCommands = map[string]map[string]bool{
+	"cp":      {"-S": true, "--suffix": true},
+	"ln":      {"-S": true, "--suffix": true},
+	"install": {"-m": true, "--mode": true, "-o": true, "-g": true, "-S": true, "--suffix": true},
+}
+
 // Subcommands that change the dependency files of the project.
 var packageCommands = map[string][]string{
-	"npm": {"i", "install"},
-	"go":  {"mod"},
+	"npm":  {"i", "install", "ci"},
+	"pnpm": {"i", "install", "add", "ci"},
+	"yarn": {"install", "add", "ci"},
+	"pip":  {"install"},
+	"pip3": {"install"},
+	"go":   {"mod", "get"},
 }
 
 func (a *analyzer) fileCommand(name string, args []tok, viaXargs bool) {
@@ -335,9 +346,48 @@ func (a *analyzer) fileCommand(name string, args []tok, viaXargs bool) {
 		}
 		return
 	}
+	if flags, ok := destinationCommands[name]; ok {
+		a.destination(name, args, flags)
+		return
+	}
 	if subs, ok := packageCommands[name]; ok {
 		if pos := positional(args, nil); len(pos) > 0 && slices.Contains(subs, pos[0].text) {
 			a.bare()
 		}
 	}
+}
+
+func (a *analyzer) destination(name string, args []tok, flags map[string]bool) {
+	var targetDir *tok
+	for i := 0; i < len(args); i++ {
+		switch text := args[i].text; {
+		case (text == "-t" || text == "--target-directory") && i+1 < len(args):
+			targetDir = &args[i+1]
+			i++
+		case strings.HasPrefix(text, "--target-directory="):
+			targetDir = &tok{text: strings.TrimPrefix(text, "--target-directory="), dyn: args[i].dyn}
+		}
+	}
+	pos := positional(args, mergeFlags(flags, map[string]bool{"-t": true, "--target-directory": true}))
+	switch {
+	case targetDir != nil:
+		a.target(*targetDir)
+	case name == "install" && slices.ContainsFunc(args, func(t tok) bool { return t.text == "-d" }):
+		for _, t := range pos {
+			a.target(t)
+		}
+	case len(pos) >= 2:
+		a.target(pos[len(pos)-1])
+	}
+}
+
+func mergeFlags(a, b map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for k := range a {
+		out[k] = true
+	}
+	for k := range b {
+		out[k] = true
+	}
+	return out
 }
