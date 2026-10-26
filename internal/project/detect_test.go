@@ -2,17 +2,11 @@ package project
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
-
-	_ "modernc.org/sqlite"
 )
 
 func git(t *testing.T, dir string, args ...string) {
@@ -37,12 +31,17 @@ func mkdir(t *testing.T, dir string) string {
 func newRepo(t *testing.T, name, remote string) string {
 	t.Helper()
 	dir := mkdir(t, filepath.Join(t.TempDir(), name))
+	initRepo(t, dir, remote)
+	return dir
+}
+
+func initRepo(t *testing.T, dir, remote string) {
+	t.Helper()
 	git(t, dir, "init", "-q")
 	git(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
 	if remote != "" {
 		git(t, dir, "remote", "add", "origin", remote)
 	}
-	return dir
 }
 
 func writeConfig(t *testing.T, dir, body string) {
@@ -112,6 +111,24 @@ func TestDetect(t *testing.T) {
 		{"raiz del filesystem es unknown", func(t *testing.T) string {
 			return "/"
 		}, Result{"unknown", Basename}},
+		{"padre con un unico repo hijo da el hijo", func(t *testing.T) string {
+			p := mkdir(t, filepath.Join(t.TempDir(), "Padre"))
+			initRepo(t, mkdir(t, filepath.Join(p, "Hijo")), "")
+			mkdir(t, filepath.Join(p, "docs"))
+			return p
+		}, Result{"hijo", GitRoot}},
+		{"padre con dos repos hijos cae al basename", func(t *testing.T) string {
+			p := mkdir(t, filepath.Join(t.TempDir(), "Padre"))
+			initRepo(t, mkdir(t, filepath.Join(p, "uno")), "")
+			initRepo(t, mkdir(t, filepath.Join(p, "dos")), "")
+			return p
+		}, Result{"padre", Basename}},
+		{"repos ocultos o de ruido no cuentan como hijo", func(t *testing.T) string {
+			p := mkdir(t, filepath.Join(t.TempDir(), "padre"))
+			initRepo(t, mkdir(t, filepath.Join(p, ".oculto")), "")
+			initRepo(t, mkdir(t, filepath.Join(p, "node_modules")), "")
+			return p
+		}, Result{"padre", Basename}},
 		{"config override en la raiz", func(t *testing.T) string {
 			d := newRepo(t, "dir", "git@github.com:acme/repo.git")
 			writeConfig(t, d, `{"project_name":"Forzado"}`)
@@ -154,48 +171,4 @@ func TestDetectInvalidConfig(t *testing.T) {
 			t.Fatalf("%s: got %v, want ErrInvalidConfig", body, err)
 		}
 	}
-}
-
-func TestReplayImportedSessions(t *testing.T) {
-	dbPath := os.Getenv("NEUGRAM_REPLAY_DB")
-	if dbPath == "" {
-		t.Skip("NEUGRAM_REPLAY_DB no definido")
-	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	rows, err := db.Query(`SELECT directory, GROUP_CONCAT(DISTINCT project), COUNT(*) FROM sessions WHERE directory <> '' GROUP BY directory`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var matched, missing, worktrees int
-	var mismatches []string
-	for rows.Next() {
-		var dir, recorded string
-		var n int
-		if err := rows.Scan(&dir, &recorded, &n); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := os.Stat(dir); err != nil {
-			missing++
-			continue
-		}
-		if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil && !info.IsDir() {
-			worktrees++
-			continue
-		}
-		got, err := Detect(context.Background(), dir)
-		if err == nil && slices.Contains(strings.Split(recorded, ","), got.Project) {
-			matched++
-			continue
-		}
-		mismatches = append(mismatches, fmt.Sprintf("%s: detectado %q (%s, %v), registrado %q (%d sesiones)", dir, got.Project, got.DetectedBy, err, recorded, n))
-	}
-	for _, m := range mismatches {
-		t.Log(m)
-	}
-	t.Logf("coinciden=%d worktrees_omitidos=%d inexistentes_omitidos=%d discrepancias=%d", matched, worktrees, missing, len(mismatches))
 }

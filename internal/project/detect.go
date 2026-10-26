@@ -36,7 +36,7 @@ type Result struct {
 }
 
 // Detect resolves the repo name for dir: config override, git remote origin,
-// git root basename, directory basename. A linked worktree resolves to its main repo.
+// git root basename, sole repo child, directory basename. A linked worktree resolves to its main repo.
 // ctx bounds every git call; on expiry the git-based steps are skipped.
 func Detect(ctx context.Context, dir string) (Result, error) {
 	if dir == "" {
@@ -47,17 +47,24 @@ func Detect(ctx context.Context, dir string) (Result, error) {
 	if res, ok, err := detectConfig(dir, root); ok || err != nil {
 		return res, err
 	}
+	return detectByLadder(ctx, dir, mainRoot), nil
+}
+
+func detectByLadder(ctx context.Context, dir, mainRoot string) Result {
 	if name := repoNameFromURL(gitOutput(ctx, dir, "remote", "get-url", "origin")); name != "" {
-		return Result{normalize(name), GitRemote}, nil
+		return Result{normalize(name), GitRemote}
 	}
 	if mainRoot != "" {
-		return Result{normalize(filepath.Base(mainRoot)), GitRoot}, nil
+		return Result{normalize(filepath.Base(mainRoot)), GitRoot}
+	}
+	if child := soleRepoChild(dir); child != "" {
+		return Result{normalize(child), GitRoot}
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		abs = dir
 	}
-	return Result{normalize(filepath.Base(abs)), Basename}, nil
+	return Result{normalize(filepath.Base(abs)), Basename}
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) string {
@@ -139,6 +146,34 @@ func detectConfig(dir, root string) (Result, bool, error) {
 		}
 		cur = parent
 	}
+}
+
+var skippedChildren = map[string]bool{
+	"node_modules": true, "vendor": true, "target": true, "dist": true, "build": true, "__pycache__": true,
+}
+
+// soleRepoChild returns the name of the only git repo among dir's direct children,
+// or "" when there are none or several. Hidden and dependency directories are ignored.
+func soleRepoChild(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	var found string
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || strings.HasPrefix(name, ".") || skippedChildren[name] {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, name, ".git")); err != nil {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = name
+	}
+	return found
 }
 
 func notNameRune(r rune) bool {
