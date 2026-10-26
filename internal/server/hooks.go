@@ -3,6 +3,8 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/rcrespodev/neugram/internal/hooks"
 	"github.com/rcrespodev/neugram/internal/hooks/transcript"
@@ -14,10 +16,36 @@ func (s *Server) routesHooks() {
 	s.mux.HandleFunc("POST /hooks/subagent-stop", func(w http.ResponseWriter, r *http.Request) { s.hookStop(w, r, true) })
 }
 
+const maxTranscriptBytes = 64 << 20
+
 type stopRequest struct {
-	SessionID      string `json:"session_id"`
-	TranscriptPath string `json:"transcript_path"`
-	StopHookActive bool   `json:"stop_hook_active"`
+	SessionID           string `json:"session_id"`
+	TranscriptPath      string `json:"transcript_path"`
+	AgentTranscriptPath string `json:"agent_transcript_path"`
+	StopHookActive      bool   `json:"stop_hook_active"`
+}
+
+func checkTranscriptPath(field, path string) error {
+	bad := func(why string) error {
+		return &store.Error{Code: "invalid_request", Message: field + " " + why}
+	}
+	if !filepath.IsAbs(path) {
+		return bad("must be an absolute path")
+	}
+	if filepath.Ext(path) != ".jsonl" {
+		return bad("must be a .jsonl file")
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return bad("unreadable: " + err.Error())
+	}
+	if !st.Mode().IsRegular() {
+		return bad("must be a regular file")
+	}
+	if st.Size() > maxTranscriptBytes {
+		return bad("is larger than the 64 MiB limit")
+	}
+	return nil
 }
 
 type observed struct {
@@ -41,6 +69,11 @@ func (s *Server) hookStop(w http.ResponseWriter, r *http.Request, subagent bool)
 	if err == nil && (req.SessionID == "" || req.TranscriptPath == "") {
 		err = &store.Error{Code: "invalid_request", Message: "session_id and transcript_path are required"}
 	}
+	for _, f := range []struct{ name, path string }{{"transcript_path", req.TranscriptPath}, {"agent_transcript_path", req.AgentTranscriptPath}} {
+		if err == nil && f.path != "" {
+			err = checkTranscriptPath(f.name, f.path)
+		}
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -57,12 +90,16 @@ func (s *Server) hookStop(w http.ResponseWriter, r *http.Request, subagent bool)
 	}
 
 	mode := transcript.Turn
+	path := req.TranscriptPath
 	if subagent {
 		mode = transcript.Entire
+		if req.AgentTranscriptPath != "" {
+			path = req.AgentTranscriptPath
+		}
 	}
-	turn, err := transcript.Scan(req.TranscriptPath, transcript.Options{Mode: mode})
+	turn, err := transcript.Scan(path, transcript.Options{Mode: mode})
 	if err != nil {
-		s.fail(w, r, &store.Error{Code: "invalid_request", Message: "transcript_path unreadable: " + err.Error()})
+		s.fail(w, r, &store.Error{Code: "invalid_request", Message: "transcript unreadable: " + err.Error()})
 		return
 	}
 	overrides, err := s.gateOverrides(r)

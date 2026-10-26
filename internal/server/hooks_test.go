@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -178,4 +179,53 @@ func TestStopErrors(t *testing.T) {
 	f.post("/hooks/stop", map[string]any{"session_id": "ghost", "transcript_path": path}, http.StatusNotFound, nil)
 	f.post("/hooks/stop", map[string]any{"session_id": "s1", "transcript_path": filepath.Join(t.TempDir(), "nope.jsonl")}, http.StatusBadRequest, nil)
 	f.post("/hooks/stop", map[string]any{"session_id": "s1"}, http.StatusBadRequest, nil)
+}
+
+func TestStopRejectsUnsafeTranscriptPaths(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	notJSONL := filepath.Join(dir, "t.txt")
+	big := filepath.Join(dir, "big.jsonl")
+	fifo := filepath.Join(dir, "pipe.jsonl")
+	dirPath := filepath.Join(dir, "dir.jsonl")
+	if err := os.WriteFile(notJSONL, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bf, err := os.Create(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bf.Truncate(maxTranscriptBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	bf.Close()
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dirPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"relativo": "rel/t.jsonl", "otra extension": notJSONL, "demasiado grande": big,
+		"fifo": fifo, "directorio": dirPath, "inexistente": filepath.Join(dir, "none.jsonl"),
+	}
+	for _, route := range []string{"/hooks/stop", "/hooks/subagent-stop"} {
+		for name, p := range cases {
+			t.Run(route+" "+name, func(t *testing.T) {
+				f.post(route, map[string]any{"session_id": "s1", "transcript_path": p}, http.StatusBadRequest, nil)
+				f.post(route, map[string]any{"session_id": "s1", "transcript_path": writeTranscript(t), "agent_transcript_path": p}, http.StatusBadRequest, nil)
+			})
+		}
+	}
+}
+
+func TestSubagentStopReadsAgentTranscriptPath(t *testing.T) {
+	f := newFixture(t)
+	parent := writeTranscript(t)
+	agent := writeTranscript(t, editTool("/home/r/proj/a.go"))
+	var out stopBody
+	f.post("/hooks/subagent-stop", map[string]any{"session_id": "s2", "transcript_path": parent, "agent_transcript_path": agent}, http.StatusOK, &out)
+	if out.Gate == nil || *out.Gate != "require-task-pin-on-mutation" {
+		t.Fatalf("out = %+v", out)
+	}
 }
