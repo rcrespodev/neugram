@@ -15,12 +15,15 @@ import (
 var sessionStartSources = []string{"startup", "resume", "clear", "compact", "fork"}
 
 func (s *Server) hookSessionStart(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		SessionID string `json:"session_id"`
-		Cwd       string `json:"cwd"`
-		Source    string `json:"source"`
+	var req struct{ SessionID, Cwd, Source string }
+	raw, err := decodeFields(w, r, "session_id", "cwd", "source")
+	if err == nil {
+		for key, dst := range map[string]*string{"session_id": &req.SessionID, "cwd": &req.Cwd, "source": &req.Source} {
+			if *dst, err = fieldString(raw, key); err != nil {
+				break
+			}
+		}
 	}
-	err := decode(w, r, &req)
 	switch {
 	case err != nil:
 	case req.SessionID == "" || req.Cwd == "":
@@ -85,7 +88,7 @@ func (s *Server) hookSessionStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !view.Pinned {
-		open, total, err := s.st.ListTasks(ctx, store.TaskQuery{Limit: store.MaxLimit})
+		open, total, err := s.st.ListTasks(ctx, store.TaskQuery{Limit: hooks.MaxStartTasks})
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -98,14 +101,12 @@ func (s *Server) hookSessionStart(w http.ResponseWriter, r *http.Request) {
 			}
 			view.OpenTasks = append(view.OpenTasks, st)
 		}
-		if req.Source == "clear" {
-			hint, err := s.st.LastPinnedSessionByDirectory(ctx, req.Cwd, sess.ID)
-			if err == nil {
-				view.LastPin = hint.TaskKey
-			} else if !isNotFound(err) {
-				s.fail(w, r, err)
-				return
-			}
+		hint, err := s.st.LastPinnedSessionByDirectory(ctx, req.Cwd, sess.ID)
+		if err == nil {
+			view.LastPin = hint.TaskKey
+		} else if !isNotFound(err) {
+			s.fail(w, r, err)
+			return
 		}
 	}
 

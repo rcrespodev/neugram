@@ -91,16 +91,14 @@ func TestSessionStartIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSessionStartClearHintsLastPinOfCwd(t *testing.T) {
+func TestSessionStartUnpinnedSessionsHintLastPinOfCwd(t *testing.T) {
 	f := newFixture(t)
-	out := f.sessionStart("after-clear", "clear")
-	if out.Pin != nil {
-		t.Fatalf("pin = %+v", out.Pin)
-	}
-	requireContains(t, out.Stdout, "CLAUDE_CODE_SESSION_ID=after-clear", "Sin pin todavía", "tenía pin EPIC-1; no se hereda", "pista, no es de tu tarea", "handoff body")
-	startup := f.sessionStart("plain", "startup")
-	if strings.Contains(startup.Stdout, "no se hereda") {
-		t.Error("startup no lleva la pista de pin")
+	for _, source := range []string{"startup", "clear", "fork"} {
+		out := f.sessionStart("hint-"+source, source)
+		if out.Pin != nil {
+			t.Fatalf("%s: pin = %+v", source, out.Pin)
+		}
+		requireContains(t, out.Stdout, "CLAUDE_CODE_SESSION_ID=hint-"+source, "Sin pin todavía", "tenía pin EPIC-1; no se hereda", "pista, no es de tu tarea", "handoff body")
 	}
 }
 
@@ -122,6 +120,11 @@ func TestSessionStartPinnedNone(t *testing.T) {
 	if strings.Contains(out.Stdout, "Tareas abiertas") || strings.Contains(out.Stdout, "handoff body") {
 		t.Errorf("salida inesperada:\n%s", out.Stdout)
 	}
+}
+
+func TestSessionStartRejectsUnknownField(t *testing.T) {
+	f := newFixture(t)
+	f.flowError("POST", "/hooks/session-start", map[string]string{"session_id": "x", "cwd": "/repo", "source": "startup", "extra": "y"}, 422, "invalid_field")
 }
 
 func TestSessionStartRejectsBadInput(t *testing.T) {

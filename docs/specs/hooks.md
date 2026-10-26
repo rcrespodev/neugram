@@ -74,9 +74,12 @@ La salida es una función del estado: dos llamadas iguales dan el mismo texto y
 dejan una sola fila de sesión. Una entrada sin `session_id`, con `cwd` relativo
 o con un `source` fuera de los cinco responde `400 invalid_request`.
 
-En `clear` la sesión nueva no hereda pin: sale sin pin y con la pista del
-último pin (`Pista: la última sesión pineada de este directorio tenía pin <key>; no se hereda.`)
-y del último handoff del mismo `cwd`.
+Toda sesión sin pin (`startup`, `clear`, `fork`, y `resume` sin pin) sale con la
+pista del último pin del mismo `cwd` (`Pista: la última sesión pineada de este
+directorio tenía pin <key>; no se hereda.`) y del último handoff de ese `cwd`:
+abrir una terminal nueva en el mismo repo es el caso común. El pin nunca se
+hereda. El body solo admite `session_id`, `cwd` y `source`; otro campo da
+`422 invalid_field`.
 
 ## `user-prompt-submit`
 
