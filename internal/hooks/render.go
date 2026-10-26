@@ -7,7 +7,7 @@ import (
 
 const (
 	maxHandoffRunes = 12000
-	maxStartTasks   = maxTasksInReason
+	MaxStartTasks   = maxTasksInReason
 )
 
 type StartTask struct {
@@ -58,14 +58,14 @@ func RenderSessionStart(v StartView) string {
 		}
 		if len(v.OpenTasks) > 0 {
 			b.WriteString("\nTareas abiertas:\n")
-			for _, t := range v.OpenTasks[:min(len(v.OpenTasks), maxStartTasks)] {
+			for _, t := range v.OpenTasks[:min(len(v.OpenTasks), MaxStartTasks)] {
 				product := t.Product
 				if product == "" {
 					product = "sin producto"
 				}
 				b.WriteString("- " + truncate(fmt.Sprintf("%s — %s [%s] (%s)", t.Key, t.Title, t.Status, product)) + "\n")
 			}
-			if extra := v.OpenTotal - maxStartTasks; extra > 0 {
+			if extra := v.OpenTotal - MaxStartTasks; extra > 0 {
 				fmt.Fprintf(&b, "- y %d más (`task_list`)\n", extra)
 			}
 		}
