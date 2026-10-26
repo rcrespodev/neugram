@@ -9,7 +9,10 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strings"
 
+	"github.com/rcrespodev/neugram/internal/hooks"
 	"github.com/rcrespodev/neugram/internal/mcp"
 )
 
@@ -31,6 +34,8 @@ commands:
                 list products with their task counts
   mcp           serve MCP tools over stdio as a thin client of the daemon;
                 starts the daemon if none answers, never replaces a live one
+  hook EVENT    run a Claude Code hook (session-start, user-prompt-submit, stop,
+                subagent-stop, session-end): JSON on stdin, fail-open, logs to hooks.log
   import-legacy [--dry-run] [--engram-db PATH] [--db PATH]
                 import ~/.engram/engram.db into neugram.db
   doctor [--db PATH]
@@ -59,6 +64,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runProduct(args[1:], stdout, stderr)
 	case "mcp":
 		return runMCP(stderr)
+	case "hook":
+		return runHook(args[1:], stderr)
 	case "import-legacy":
 		return runImportLegacy(args[1:], stdout, stderr)
 	case "doctor":
@@ -99,6 +106,14 @@ func revision() string {
 		rev = rev[:7]
 	}
 	return rev + dirty
+}
+
+func runHook(args []string, stderr io.Writer) int {
+	if len(args) != 1 || !slices.Contains(hooks.Events, args[0]) {
+		fmt.Fprintf(stderr, "usage: neugram hook {%s}\n", strings.Join(hooks.Events, "|"))
+		return 2
+	}
+	return hooks.Run(args[0], os.Stdin, os.Stdout, stderr, newClient())
 }
 
 // runMCP keeps stdout for the protocol; notices go to stderr.

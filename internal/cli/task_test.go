@@ -18,7 +18,7 @@ import (
 	"github.com/rcrespodev/neugram/internal/store"
 )
 
-func startServer(t *testing.T, extraTasks int) {
+func startServer(t testing.TB, extraTasks int) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "neugram.db")
 	st, err := store.Open(path)
@@ -58,7 +58,7 @@ func startServer(t *testing.T, extraTasks int) {
 	noStart(t)
 }
 
-func noStart(t *testing.T) {
+func noStart(t testing.TB) {
 	t.Helper()
 	prev := client.StartDaemon
 	client.StartDaemon = func(string) error { return errors.New("start disabled in tests") }
