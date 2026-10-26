@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/rcrespodev/neugram/internal/project"
 	"github.com/rcrespodev/neugram/internal/store"
 )
 
-const detectTimeout = 2 * time.Second
+const (
+	detectTimeout = 2 * time.Second
+	maxBodyBytes  = 1 << 20
+)
 
 func (s *Server) routesSessions() {
 	s.mux.HandleFunc("POST /sessions", s.createSession)
@@ -19,7 +23,8 @@ func (s *Server) routesSessions() {
 	s.mux.HandleFunc("POST /prompts", s.addPrompt)
 }
 
-func decode(r *http.Request, v any) error {
+func decode(w http.ResponseWriter, r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		return &store.Error{Code: "invalid_request", Message: "body must be a JSON object: " + err.Error()}
 	}
@@ -39,12 +44,16 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Project   string `json:"project"`
 		Directory string `json:"directory"`
 	}
-	if err := decode(r, &in); err != nil {
+	if err := decode(w, r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if in.ID == "" || in.Directory == "" {
 		s.fail(w, r, &store.Error{Code: "invalid_request", Message: "id and directory are required"})
+		return
+	}
+	if !filepath.IsAbs(in.Directory) {
+		s.fail(w, r, &store.Error{Code: "invalid_request", Message: "directory must be an absolute path"})
 		return
 	}
 	if in.Project == "" {
@@ -92,7 +101,7 @@ func (s *Server) pinSession(w http.ResponseWriter, r *http.Request) {
 		Notes    string         `json:"notes"`
 		PinnedBy string         `json:"pinned_by"`
 	}
-	if err := decode(r, &in); err != nil {
+	if err := decode(w, r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -125,7 +134,7 @@ func (s *Server) addPrompt(w http.ResponseWriter, r *http.Request) {
 		Content   string `json:"content"`
 		Project   string `json:"project"`
 	}
-	if err := decode(r, &in); err != nil {
+	if err := decode(w, r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
