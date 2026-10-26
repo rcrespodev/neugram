@@ -262,8 +262,9 @@ Respuesta:
 `judgment_required` y `candidates` viajan **siempre**: los candidatos salen de
 `FindCandidates` sobre las filas que se acaban de escribir, en la misma
 transacción y en el mismo proceso; `similarity` y el umbral están en
-`specs/data-model.md` (Candidatos de conflicto). `judgment_required` es `false` con
-`candidates: []` cuando no hay ninguno. Cada candidato trae su propio
+`specs/data-model.md` (Candidatos de conflicto). `judgment_required` es `true` solo
+si al menos un candidato tiene `judgment_status: pending`; es `false` con
+`candidates: []` y también cuando todos los candidatos ya están juzgados. Cada candidato trae su propio
 `judgment_id`: [`mem_judge`](#mem_judge) se llama una vez por candidato.
 Cada candidato trae además `relation` y `judgment_status`: `pending` y `pending`
 si está por juzgar, o la `relation` vigente y `judged` si el par ya se juzgó
