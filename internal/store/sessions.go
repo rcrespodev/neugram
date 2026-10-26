@@ -80,3 +80,13 @@ func getSession(ctx context.Context, q querier, id string) (Session, error) {
 	ss.PinnedAt, ss.PinnedBy = pinnedAt.String, pinnedBy.String
 	return ss, err
 }
+
+// TaskKeyByID resolves a task id to its key.
+func (s *Store) TaskKeyByID(ctx context.Context, id string) (string, error) {
+	var key string
+	err := s.db.QueryRowContext(ctx, `SELECT key FROM tasks WHERE id = ?`, id).Scan(&key)
+	if err == sql.ErrNoRows {
+		return "", errorf(ErrUnknownTask, "task %q does not exist", id)
+	}
+	return key, err
+}

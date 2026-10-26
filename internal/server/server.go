@@ -38,6 +38,7 @@ func New(st *store.Store, opts Options) *Server {
 	s.routesMemory()
 	s.routesFlow()
 	s.routesHooks()
+	s.routesSessions()
 	s.mux.HandleFunc("GET /health", s.health)
 	s.mux.HandleFunc("POST /shutdown", s.shutdown)
 	return s
