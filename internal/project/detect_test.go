@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -94,6 +95,23 @@ func TestDetect(t *testing.T) {
 		{"worktree sin remote da la raiz del repo", func(t *testing.T) string {
 			return addWorktree(t, newRepo(t, "principal", ""))
 		}, Result{"principal", GitRoot}},
+		{"cwd que es un archivo cae al basename", func(t *testing.T) string {
+			f := filepath.Join(mkdir(t, filepath.Join(t.TempDir(), "dir")), "Archivo.txt")
+			if err := os.WriteFile(f, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return f
+		}, Result{"archivo.txt", Basename}},
+		{"symlink a un repo resuelve el repo", func(t *testing.T) string {
+			link := filepath.Join(t.TempDir(), "enlace")
+			if err := os.Symlink(newRepo(t, "real", ""), link); err != nil {
+				t.Fatal(err)
+			}
+			return link
+		}, Result{"real", GitRoot}},
+		{"raiz del filesystem es unknown", func(t *testing.T) string {
+			return "/"
+		}, Result{"unknown", Basename}},
 		{"config override en la raiz", func(t *testing.T) string {
 			d := newRepo(t, "dir", "git@github.com:acme/repo.git")
 			writeConfig(t, d, `{"project_name":"Forzado"}`)
@@ -117,7 +135,7 @@ func TestDetect(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := Detect(tc.setup(t))
+			got, err := Detect(context.Background(), tc.setup(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +150,7 @@ func TestDetectInvalidConfig(t *testing.T) {
 	for _, body := range []string{`{`, `{"project_name":""}`, `{"project_name":"a/b"}`} {
 		d := newRepo(t, "dir", "")
 		writeConfig(t, d, body)
-		if _, err := Detect(d); !errors.Is(err, ErrInvalidConfig) {
+		if _, err := Detect(context.Background(), d); !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("%s: got %v, want ErrInvalidConfig", body, err)
 		}
 	}
@@ -169,7 +187,7 @@ func TestReplayImportedSessions(t *testing.T) {
 			worktrees++
 			continue
 		}
-		got, err := Detect(dir)
+		got, err := Detect(context.Background(), dir)
 		if err == nil && slices.Contains(strings.Split(recorded, ","), got.Project) {
 			matched++
 			continue

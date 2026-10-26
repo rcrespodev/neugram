@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -33,33 +34,31 @@ type Result struct {
 
 // Detect resolves the repo name for dir: config override, git remote origin,
 // git root basename, directory basename. A linked worktree resolves to its main repo.
-func Detect(dir string) (Result, error) {
+// ctx bounds every git call; on expiry the git-based steps are skipped.
+func Detect(ctx context.Context, dir string) (Result, error) {
 	if dir == "" {
 		dir = "."
 	}
-	if strings.HasPrefix(dir, "-") {
-		dir = "./" + dir
-	}
-	root := gitOutput(dir, "rev-parse", "--show-toplevel")
+	root, mainRoot := gitRoots(ctx, dir)
 
 	if res, ok, err := detectConfig(dir, root); ok || err != nil {
 		return res, err
 	}
-	if name := repoNameFromURL(gitOutput(dir, "remote", "get-url", "origin")); name != "" {
+	if name := repoNameFromURL(gitOutput(ctx, dir, "remote", "get-url", "origin")); name != "" {
 		return Result{normalize(name), GitRemote}, nil
 	}
-	if root != "" {
-		return Result{normalize(filepath.Base(mainRepoRoot(dir, root))), GitRoot}, nil
+	if mainRoot != "" {
+		return Result{normalize(filepath.Base(mainRoot)), GitRoot}, nil
 	}
-	base := filepath.Base(realPath(dir))
-	if base == "" || base == "." {
-		base = unknownProject
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir
 	}
-	return Result{normalize(base), Basename}, nil
+	return Result{normalize(filepath.Base(abs)), Basename}, nil
 }
 
-func gitOutput(dir string, args ...string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+func gitOutput(ctx context.Context, dir string, args ...string) string {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
 	if err != nil {
@@ -68,13 +67,19 @@ func gitOutput(dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// mainRepoRoot maps a linked worktree root to the root of the repo that owns it.
-func mainRepoRoot(dir, root string) string {
-	common := gitOutput(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if filepath.Base(common) == ".git" {
-		return filepath.Dir(common)
+// gitRoots returns the toplevel of the checkout containing dir and the root of
+// the repo that owns it (they differ in a linked worktree); both empty outside git.
+func gitRoots(ctx context.Context, dir string) (root, mainRoot string) {
+	out := gitOutput(ctx, dir, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir")
+	lines := strings.Split(out, "\n")
+	if len(lines) != 2 {
+		return "", ""
 	}
-	return root
+	root, common := lines[0], lines[1]
+	if filepath.Base(common) == ".git" {
+		return root, filepath.Dir(common)
+	}
+	return root, root
 }
 
 func repoNameFromURL(url string) string {
@@ -88,7 +93,7 @@ func repoNameFromURL(url string) string {
 
 func normalize(name string) string {
 	n := strings.ToLower(strings.TrimSpace(name))
-	if n == "" {
+	if n == "" || n == "/" || n == "." {
 		return unknownProject
 	}
 	return n
@@ -128,7 +133,7 @@ func realPath(p string) string {
 func readConfig(dir string) (Result, bool, error) {
 	path := filepath.Join(dir, ".engram", "config.json")
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return Result{}, false, nil
 	}
 	if err != nil {
