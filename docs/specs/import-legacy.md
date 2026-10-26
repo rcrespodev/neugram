@@ -168,7 +168,7 @@ Cada destino se upsertea por su clave natural: `sessions.id`,
 resultado. `meta.last_import_at` y `meta.legacy_db_path` guardan la corrida, y
 la transacción que aplica el DDL escribe `meta.schema_version`.
 
-Reimportar vale sólo antes del corte (paso 3): pisa los campos importados
+Reimportar vale sólo antes del corte (paso 4): pisa los campos importados
 —`status`, `title`, producto y `notes` de cada tarea, y el content de las
 observaciones legacy— con lo que diga el archivo legacy, así que un cambio
 hecho con el CLI de neugram sobre esos campos se pierde. Lo que el legacy no
@@ -222,9 +222,19 @@ con tarea, 164 ninguna, 1 sin key resoluble). Las 14 relaciones omitidas siguen
 omitidas: cada una tiene el otro extremo en un registro `status`, `wt` o
 `identity`, que no es observación.
 
+## Ensayo previo (paso 3)
+
+El paso 3 no corta. Se ensaya sobre un `CLAUDE_CONFIG_DIR` de ensayo (copia de
+`settings.json` con el plugin de Engram deshabilitado y neugram cableado) y un
+`NEUGRAM_HOME`/`NEUGRAM_ADDR` temporales, con una base importada de una copia
+de `engram.db`. Nada se instala global y el daemon de Engram sigue vivo: el
+import del ensayo no pisa nada real, y el import definitivo se repite justo
+antes del corte, con el daemon de Engram apagado.
+
 ## Corte
 
-Después de un `import-legacy` real y un `neugram doctor` limpio, un solo edit a
+El corte es la última entrega del paso 4 (`roadmap.md`), cuando están las 19
+tools, las instrucciones editables y el gate de progreso. Después de un `import-legacy` real y un `neugram doctor` limpio, un solo edit a
 `~/.claude/settings.json` y `~/.claude.json`:
 
 1. Quitar el MCP `plugin_engram_engram` (o deshabilitar el plugin) y agregar `neugram` con `command: neugram, args: [mcp]`.

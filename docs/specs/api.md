@@ -214,6 +214,7 @@ agente.
 
 ```json
 {
+  "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1",
   "title": "API unificada en un solo documento",
   "content": "**What**: docs/specs/api.md absorbe specs/mcp-tools.md...\n\n**Task**: engram-fork-debat — Fork personal de Engram (debate de diseño)",
   "type": "architecture",
@@ -298,7 +299,7 @@ Sin ningún campo además de `sync_id`, la llamada falla con
 [`invalid_request`](#invalid_request).
 
 ```json
-{ "sync_id": "obs-9f2c1a7b4e5d6f80a1b2c3d4e5f60718", "task_id": "TRIPULSE-3652", "impact": "medium" }
+{ "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1", "sync_id": "obs-9f2c1a7b4e5d6f80a1b2c3d4e5f60718", "task_id": "TRIPULSE-3652", "impact": "medium" }
 ```
 
 ```json
@@ -559,6 +560,7 @@ llamada por candidato, con el `judgment_id` de ese candidato.
 
 ```json
 {
+  "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1",
   "judgment_id": "rel-3c8a41d70b2e4f9a8c15d6e703b4a2f1",
   "relation": "supersedes",
   "reason": "La absorción de Engram reemplaza el diseño de capa del ADR 0001",
@@ -754,7 +756,7 @@ con otra tarea repinea y lo deja en el log. `pinned_by` es siempre `agent`
 desde el MCP.
 
 ```json
-{ "task_id": "TRIPULSE-3652-1", "title": "Jerarquía de tareas", "parent": "TRIPULSE-3652", "product": "Microservices" }
+{ "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1", "task_id": "TRIPULSE-3652-1", "title": "Jerarquía de tareas", "parent": "TRIPULSE-3652", "product": "Microservices" }
 ```
 
 ```json
@@ -882,7 +884,7 @@ agente; ningún hook llama esta tool.
 `status` ∈ `todo` · `in-progress` · `review` · `blocked` · `done`.
 
 ```json
-{ "task_id": "TRIPULSE-3652-1", "status": "in-progress" }
+{ "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1", "task_id": "TRIPULSE-3652-1", "status": "in-progress" }
 ```
 
 ```json
@@ -1028,6 +1030,7 @@ sin esto.
 
 ```json
 {
+  "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1",
   "path": "/home/rcrespodev/rcrespodev/neugram-api",
   "repo": "neugram",
   "branch": "feat/api-doc",
@@ -1115,6 +1118,7 @@ volcarle todo al padre. Es lo que exige el gate `require-progress-report` en
 
 ```json
 {
+  "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1",
   "delegation_id": "api-04",
   "role": "impl",
   "status": "done",

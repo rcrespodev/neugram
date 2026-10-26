@@ -5,12 +5,18 @@
 El bloque que `session-start` inyecta se arma en el daemon a partir de dos
 fuentes y se muestra con `neugram instructions show [--product X]`.
 
+**En el paso 3 solo existe la parte generada.** `GET /instructions` la sirve
+sin `schema_fields` (todavía no existen) y la parte libre viene vacía; no hay
+`instructions edit` ni texto transicional del CLAUDE.md, porque no hay corte
+(`roadmap.md`). La parte libre, el override por producto y los campos custom
+entran en el paso 4.
+
 ### Parte generada
 
 Se deriva de `schema_fields` y del estado de `gates`. Se regenera en cada
 llamada; nunca se edita a mano. Contiene:
 
-- La lista de tools de flujo y para qué sirve cada una, en una línea.
+- La lista de tools de flujo y para qué sirve cada una, en una línea; en el paso 3, las que existen. Incluye que toda tool que escribe pide `session_id`, tomado de la primera línea de `session-start`.
 - Por cada tabla con campos custom: nombre, tipo, si es obligatorio, valores permitidos y descripción, tal como están en `schema_fields`.
 - Los gates habilitados, cada uno con la frase que explica qué bloquea.
 - Los tipos válidos de observación: `bugfix` · `decision` · `architecture` · `discovery` · `pattern` · `config` · `preference` · `handoff` · `session_summary`.
@@ -45,7 +51,21 @@ usuario (ADR 0009).
 | `require-worktree-registered` | on | El turno ejecutó `git worktree add` (o `EnterWorktree`) y no hubo `worktree_register` con ese path en el turno | — |
 | `require-field` | off | Un `mem_save` del turno omitió el campo custom nombrado. Redundante con `required=1` en `schema_fields`, que ya rechaza el save; este gate existe para campos que se quieren exigir solo en ciertos productos | `{"field": "impact", "products": ["Portal"]}` |
 | `require-progress-report` | on | Solo en `subagent-stop`. El subagente mutó archivos y no hubo un `progress_write` exitoso en su transcript. El `reason` lista los archivos tocados y la llamada con los campos obligatorios | — |
-| `block-topic-key-collision` | on | Un `mem_save` trae `topic_key` que ya existe en el mismo project con distinto `sync_id`. Se evalúa en el daemon antes del `POST`, no en el `Stop`; el gate solo decide si se rechaza o se deja pasar como upsert | — |
+| `block-topic-key-collision` | off en el paso 3; on desde el paso 4 | Un `mem_save` trae `topic_key` que ya existe en el mismo project con distinto `sync_id`. Se evalúa en el daemon antes del `POST`, no en el `Stop`; el gate solo decide si se rechaza o se deja pasar como upsert | — |
+
+`block-topic-key-collision` arranca apagado porque choca con el protocolo
+vigente: los registros que se actualizan por `topic_key` (y el reintento de un
+reporte de progreso, que reusa la key) serían todos 409 vía `mem_save`. Se
+revisa en el paso 4, con `progress_write` y `mem_update` como camino de
+actualización.
+
+En el paso 3, `subagent-stop` aplica solo `require-task-pin-on-mutation` y
+`require-worktree-registered`; `require-progress-report` entra en el paso 4
+(`specs/hooks.md#subagent-stop`).
+
+El set de gates y sus defaults viven en código. Una fila de `gates` solo
+sobreescribe `enabled` y `params`, y sin filas rige el default; `gate
+ls/enable/disable` es del paso 4. Ningún cambio del paso 3 modifica el DDL.
 
 Un gate que haga falta dos veces se agrega al set fijo con un ADR corto.
 

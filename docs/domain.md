@@ -14,7 +14,7 @@ el error está en el código o en la doc.
 | **Tarea padre** | La tarea de la que cuelga otra, un nivel arriba. Se usa solo al distinguir | `tasks.parent_task_id` |
 | **Ancestros** | El padre y, si lo hay, el abuelo. Con tres niveles son como mucho dos, así que subir el árbol son dos lookups y nunca una recursión | `tasks.parent_task_id` |
 | **Status** | Una palabra declarada por el usuario: `todo` · `in-progress` · `review` · `blocked` · `done`. Ningún hook lo cambia | `tasks.status` |
-| **Sesión** | Una sesión de Claude Code, identificada por `CLAUDE_CODE_SESSION_ID`. Los subagentes heredan el id. Una sola fila: pin y memoria son la misma | `sessions` |
+| **Sesión** | Una sesión de Claude Code, identificada por `CLAUDE_CODE_SESSION_ID`, que el hook `session-start` imprime y las tools MCP reciben como argumento. Los subagentes heredan el id. Una sola fila: pin y memoria son la misma | `sessions` |
 | **Pin** | La relación sesión → tarea, fijada antes de la primera mutación. `none` es un pin válido y explícito, distinto de "sin pin" | `sessions.task_id` + `sessions.pinned_at` |
 | **Mutación** | Un `Edit`, `Write` o `Bash` que cambia archivos dentro de un turno. Lo detecta el hook `Stop` leyendo el transcript | — |
 | **Observación** | Una decisión, bugfix, descubrimiento, etc. Lleva `task_id` y `kind` como columnas propias | `observations` |

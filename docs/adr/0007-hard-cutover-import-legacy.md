@@ -1,6 +1,6 @@
 # ADR 0007 — Corte duro con `import-legacy`; lo viejo queda como historia
 
-Estado: enmendado por ADR 0011 · Origen: obs 6574
+Estado: enmendado por ADR 0011 y 0013 · Origen: obs 6574
 
 ## Contexto
 
@@ -27,3 +27,6 @@ Tras ADR 0011: el corte duro sigue siendo un solo commit de config, y por la
 misma razón. Cambia la fuente y el alcance del import: lee
 `~/.engram/engram.db` directamente, no el HTTP, y trae toda la memoria
 —observaciones, sesiones, prompts, relaciones—, no solo el project `tasks`.
+
+Tras ADR 0013: el corte ocurre al final del paso 4, no del 3; el paso 3 se
+ensaya en un `CLAUDE_CONFIG_DIR` aislado sin tocar el `settings.json` real.

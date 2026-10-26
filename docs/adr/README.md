@@ -16,9 +16,10 @@ que dice qué sigue valiendo y qué no.
 | 0004 | Columnas custom con DDL real desde `schema_fields` | enmendado por 0011 |
 | 0005 | Un usuario, local, UI web propia; Engram Cloud se apaga | enmendado por 0011 |
 | 0006 | Go, un binario, daemon más clientes finos | enmendado por 0011 |
-| 0007 | Corte duro con `import-legacy` | enmendado por 0011 |
-| 0008 | MCP espejo más tools de flujo; schema solo por CLI | aceptado |
+| 0007 | Corte duro con `import-legacy` | enmendado por 0011 y 0013 |
+| 0008 | MCP espejo más tools de flujo; schema solo por CLI | enmendado por 0013 |
 | 0009 | Instrucciones generadas + libres; gates fijos; prompts por hook | aceptado |
 | 0010 | Reportes de progreso: tabla propia, tool y gate | aceptado |
 | 0011 | neugram escribe su propio store; Engram se lee, no se copia | aceptado |
 | 0012 | Jerarquía de tareas con `parent_task_id` | aceptado |
+| 0013 | `session_id` explícito en las tools; el corte pasa al paso 4 | aceptado |
