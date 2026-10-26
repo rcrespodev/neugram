@@ -18,6 +18,7 @@ const (
 
 func (s *Server) routesSessions() {
 	s.mux.HandleFunc("POST /sessions", s.createSession)
+	s.mux.HandleFunc("GET /sessions/{id}", s.getSession)
 	s.mux.HandleFunc("POST /sessions/{id}/pin", s.pinSession)
 	s.mux.HandleFunc("POST /sessions/{id}/end", s.endSession)
 	s.mux.HandleFunc("POST /prompts", s.addPrompt)
@@ -36,6 +37,44 @@ type sessionPin struct {
 	TaskKey  string `json:"task_key"`
 	PinnedAt string `json:"pinned_at"`
 	PinnedBy string `json:"pinned_by"`
+}
+
+func (s *Server) pinOf(ctx context.Context, sess store.Session) (*sessionPin, error) {
+	if sess.PinnedAt == "" {
+		return nil, nil
+	}
+	pin := &sessionPin{TaskID: sess.TaskID, TaskKey: store.NoTaskKey, PinnedAt: sess.PinnedAt, PinnedBy: sess.PinnedBy}
+	if sess.TaskID != "" {
+		key, err := s.st.TaskKeyByID(ctx, sess.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		pin.TaskKey = key
+	}
+	return pin, nil
+}
+
+// getSession serves identity and pin; counts, handoff, observations and
+// prompts of the UI body in docs/specs/api.md are not served yet.
+func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.st.GetSession(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	pin, err := s.pinOf(r.Context(), sess)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var ended *string
+	if sess.EndedAt != "" {
+		ended = &sess.EndedAt
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"session_id": sess.ID, "project": sess.Project, "directory": sess.Directory,
+		"started_at": sess.StartedAt, "ended_at": ended, "pin": pin,
+	})
 }
 
 func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
@@ -71,15 +110,10 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	var pin *sessionPin
-	if sess.PinnedAt != "" {
-		pin = &sessionPin{TaskID: sess.TaskID, TaskKey: store.NoTaskKey, PinnedAt: sess.PinnedAt, PinnedBy: sess.PinnedBy}
-		if sess.TaskID != "" {
-			if pin.TaskKey, err = s.st.TaskKeyByID(r.Context(), sess.TaskID); err != nil {
-				s.fail(w, r, err)
-				return
-			}
-		}
+	pin, err := s.pinOf(r.Context(), sess)
+	if err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	status := http.StatusOK
 	if created {

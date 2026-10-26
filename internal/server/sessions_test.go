@@ -53,6 +53,32 @@ func TestCreateSessionIsIdempotentAndKeepsThePin(t *testing.T) {
 	}
 }
 
+func TestGetSessionReturnsIdentityAndPin(t *testing.T) {
+	f := newFixture(t)
+	var got struct {
+		SessionID string  `json:"session_id"`
+		Project   string  `json:"project"`
+		EndedAt   *string `json:"ended_at"`
+		Pin       *struct {
+			TaskKey string `json:"task_key"`
+		} `json:"pin"`
+	}
+	f.get("/sessions/s1", http.StatusOK, &got)
+	if got.SessionID != "s1" || got.Project != "neugram" || got.EndedAt == nil || got.Pin == nil || got.Pin.TaskKey != "EPIC-1" {
+		t.Fatalf("pinned = %+v", got)
+	}
+	got.Pin = nil
+	f.get("/sessions/s2", http.StatusOK, &got)
+	if got.Pin != nil || got.EndedAt != nil {
+		t.Fatalf("unpinned = %+v", got)
+	}
+}
+
+func TestGetSessionUnknownIs404(t *testing.T) {
+	f := newFixture(t)
+	f.flowError("GET", "/sessions/nope", nil, http.StatusNotFound, "unknown_session")
+}
+
 func TestCreateSessionRejectsMissingFields(t *testing.T) {
 	f := newFixture(t)
 	f.post("/sessions", map[string]string{"id": "x"}, http.StatusBadRequest, nil)
