@@ -1610,6 +1610,11 @@ Errores: `400` [`invalid_request`](#invalid_request)
 **E** · Sesión con su pin, sus prompts y sus observaciones. Cuerpo de la
 página `/sessions/{id}`.
 
+**Paso 3:** la respuesta trae solo `session_id`, `project`, `directory`,
+`started_at`, `ended_at` y `pin`; la usa el MCP para resolver el pin. `counts`,
+`handoff`, `observations`, `prompts` y la query `include`/`limit` entran con la
+UI (paso 5).
+
 Query: `include` (`prompts,observations`; default los dos), `limit`.
 
 ```json
