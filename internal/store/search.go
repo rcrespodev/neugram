@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -64,15 +66,24 @@ type SearchParams struct {
 	SessionID string
 	Types     []string
 	TaskIDs   []string
+	Product   string
+	Where     map[string]any
 	Since     string
 	Until     string
 	Limit     int
 	Offset    int
+
+	// Task is a key or id. Its ancestors are added unless SkipAncestors;
+	// IncludeSubtasks adds the whole subtree.
+	Task            string
+	SkipAncestors   bool
+	IncludeSubtasks bool
 }
 
 type SearchResult struct {
 	Observation
-	Score float64
+	Score   float64
+	Preview string
 }
 
 // SearchObservations returns one page of matches and the total count.
@@ -126,6 +137,28 @@ func (s *Store) SearchObservations(ctx context.Context, p SearchParams) ([]Searc
 		where = append(where, "o.created_at <= ?")
 		args = append(args, p.Until)
 	}
+	if p.Task != "" {
+		ids, err := s.taskScope(ctx, p.Task, !p.SkipAncestors, p.IncludeSubtasks)
+		if err != nil {
+			return nil, 0, err
+		}
+		in("o.task_id", ids)
+	}
+	if p.Product != "" {
+		where = append(where, `o.task_id IN (SELECT t.id FROM tasks t JOIN products pr ON pr.id = t.product_id WHERE pr.name = ?)`)
+		args = append(args, p.Product)
+	}
+	for _, col := range slices.Sorted(maps.Keys(p.Where)) {
+		if !slices.Contains(observationFixedColumns, col) {
+			return nil, 0, errorf(ErrInvalidField, "observations has no column %q", col)
+		}
+		if v := p.Where[col]; v == nil {
+			where = append(where, "o."+col+" IS NULL")
+		} else {
+			where = append(where, "o."+col+" = ?")
+			args = append(args, v)
+		}
+	}
 	cond := from + ` WHERE ` + strings.Join(where, " AND ")
 
 	var total int
@@ -149,7 +182,7 @@ func (s *Store) SearchObservations(ctx context.Context, p SearchParams) ([]Searc
 		if score == 0 {
 			score = 0
 		}
-		results = append(results, SearchResult{Observation: obs, Score: score})
+		results = append(results, SearchResult{Observation: obs, Score: score, Preview: preview(obs.Content)})
 	}
 	return results, total, rows.Err()
 }
