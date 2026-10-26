@@ -53,6 +53,13 @@ usuario (ADR 0009).
 | `require-progress-report` | on | Solo en `subagent-stop`. El subagente mutó archivos y no hubo un `progress_write` exitoso en su transcript. El `reason` lista los archivos tocados y la llamada con los campos obligatorios | — |
 | `block-topic-key-collision` | off en el paso 3; se revisa en el paso 4 | Un `mem_save` trae `topic_key` que ya existe en el mismo project con distinto `sync_id`. Se evalúa en el daemon antes del `POST`, no en el `Stop`; el gate solo decide si se rechaza o se deja pasar como upsert | — |
 
+**Worktree con path no expandible.** `require-worktree-registered` compara el
+path de cada worktree creado contra los `worktree_register` exitosos del turno.
+Un `git worktree add` con `Unresolved: true` no se puede comparar: el gate se
+satisface si hubo al menos un `worktree_register` en el turno; si no, bloquea
+citando el comando tal como se escribió y pidiendo el path absoluto.
+`require-save-on-mutation` no cuenta `worktree_register` como guardado.
+
 `block-topic-key-collision` arranca apagado porque choca con el protocolo
 vigente: los registros que se actualizan por `topic_key` (y el reintento de un
 reporte de progreso, que reusa la key) serían todos 409 vía `mem_save`. Se
