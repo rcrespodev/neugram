@@ -134,6 +134,94 @@ func TestTaskKeyWithReservedCharactersIsEscapedInThePath(t *testing.T) {
 	}
 }
 
+func TestTaskPinForwardsTrackerNotesAndProduct(t *testing.T) {
+	cs := realDaemon(t)
+	_, out := callJSON(t, cs, "task_pin", map[string]any{
+		"session_id": "s1", "task_id": "EPIC-1", "title": "Epic", "notes": "some notes",
+		"tracker": "clickup:86dxyz:https://app.clickup.com/t/86dxyz",
+	})
+	if out["created"] != true {
+		t.Fatalf("pin: %v", out)
+	}
+	_, show := callJSON(t, cs, "task_show", map[string]any{"task_id": "EPIC-1"})
+	task, _ := show["task"].(map[string]any)
+	tracker, _ := task["tracker"].(map[string]any)
+	if task["notes"] != "some notes" || tracker["kind"] != "clickup" || tracker["id"] != "86dxyz" || tracker["url"] != "https://app.clickup.com/t/86dxyz" {
+		t.Fatalf("task = %v", task)
+	}
+}
+
+func TestTaskPinMalformedTrackerIsInvalidRequest(t *testing.T) {
+	cs := realDaemon(t)
+	isErr, out := callJSON(t, cs, "task_pin", map[string]any{"session_id": "s1", "task_id": "EPIC-1", "title": "E", "tracker": "clickup"})
+	if !isErr || errCode(out) != "invalid_request" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskPinProductOfAnUnknownProductIsRejected(t *testing.T) {
+	cs := realDaemon(t)
+	isErr, out := callJSON(t, cs, "task_pin", map[string]any{"session_id": "s1", "task_id": "EPIC-1", "title": "E", "product": "Nope"})
+	if !isErr {
+		t.Fatalf("out=%v", out)
+	}
+}
+
+func TestTaskListTreeNestsChildren(t *testing.T) {
+	cs := realDaemon(t)
+	pinNew(t, cs, "EPIC-1", nil)
+	pinNew(t, cs, "EPIC-1-a", map[string]any{"parent": "EPIC-1"})
+	isErr, out := callJSON(t, cs, "task_list", map[string]any{"tree": true, "roots_only": true})
+	tasks, _ := out["tasks"].([]any)
+	if isErr || out["tree"] != true || len(tasks) != 1 {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+	children, _ := tasks[0].(map[string]any)["children"].([]any)
+	if len(children) != 1 {
+		t.Fatalf("children = %v", children)
+	}
+}
+
+func TestTaskListWhereReachesTheDaemon(t *testing.T) {
+	cs := realDaemon(t)
+	isErr, out := callJSON(t, cs, "task_list", map[string]any{"where": map[string]any{"nope": "x"}})
+	if !isErr || errCode(out) != "invalid_field" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskShowIncludeSubtasksAndObservationsLimit(t *testing.T) {
+	cs := realDaemon(t)
+	pinNew(t, cs, "EPIC-1", nil)
+	pinNew(t, cs, "EPIC-1-a", map[string]any{"parent": "EPIC-1"})
+	_, with := callJSON(t, cs, "task_show", map[string]any{"task_id": "EPIC-1"})
+	_, without := callJSON(t, cs, "task_show", map[string]any{"task_id": "EPIC-1", "include_subtasks": false})
+	if len(with["children"].([]any)) != 1 {
+		t.Fatalf("with = %v", with)
+	}
+	if c, _ := without["children"].([]any); len(c) != 0 {
+		t.Fatalf("without = %v", without)
+	}
+	if isErr, out := callJSON(t, cs, "task_show", map[string]any{"task_id": "EPIC-1", "observations_limit": 101}); !isErr {
+		t.Fatalf("limit 101 accepted: %v", out)
+	}
+}
+
+func TestWorktreeRegisterCreatesThenUpdates(t *testing.T) {
+	cs := realDaemon(t)
+	pinNew(t, cs, "EPIC-1", nil)
+	args := map[string]any{"session_id": "s1", "path": "/tmp/wt-a", "repo": "neugram", "branch": "feat/x", "base": "main", "purpose": "work"}
+	isErr, first := callJSON(t, cs, "worktree_register", args)
+	if isErr || first["created"] != true || first["task_key"] != "EPIC-1" {
+		t.Fatalf("first: %v", first)
+	}
+	args["branch"] = "feat/y"
+	_, second := callJSON(t, cs, "worktree_register", args)
+	if second["created"] != false || second["branch"] != "feat/y" {
+		t.Fatalf("second: %v", second)
+	}
+}
+
 func TestHandoffSaveWithoutSessionIsInvalidRequest(t *testing.T) {
 	cs := realDaemon(t)
 	isErr, out := callJSON(t, cs, "handoff_save", map[string]any{"content": "x"})

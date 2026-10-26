@@ -105,6 +105,9 @@ func queryOf(args map[string]any) string {
 		switch x := v.(type) {
 		case string:
 			q.Set(k, x)
+		case map[string]any:
+			raw, _ := json.Marshal(x)
+			q.Set(k, string(raw))
 		case bool:
 			q.Set(k, strconv.FormatBool(x))
 		case float64:
