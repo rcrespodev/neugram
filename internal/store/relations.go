@@ -41,13 +41,18 @@ type Judgment struct {
 	UpdatedAt            string
 }
 
-// createPendingRelations writes one pending relation per candidate and sets
-// its JudgmentID. A pending pair that already exists is reused.
+// createPendingRelations attaches a relation to each candidate. A pair is
+// unordered: a judged relation in either direction is kept as is, otherwise a
+// pending one in either direction is reused, otherwise a new pending is written.
 func createPendingRelations(ctx context.Context, tx *sql.Tx, now, sessionID, sourceSyncID string, cands []Candidate) ([]Candidate, error) {
 	for i := range cands {
-		err := tx.QueryRowContext(ctx, `SELECT sync_id FROM memory_relations
-			WHERE source_id = ? AND target_id = ? AND judgment_status = ?`,
-			sourceSyncID, cands[i].SyncID, StatusPending).Scan(&cands[i].JudgmentID)
+		err := tx.QueryRowContext(ctx, `SELECT sync_id, relation, judgment_status FROM memory_relations
+			WHERE ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))
+			  AND judgment_status IN (?, ?)
+			ORDER BY judgment_status = ? DESC, id DESC LIMIT 1`,
+			sourceSyncID, cands[i].SyncID, cands[i].SyncID, sourceSyncID,
+			StatusPending, StatusJudged, StatusJudged).
+			Scan(&cands[i].JudgmentID, &cands[i].Relation, &cands[i].JudgmentStatus)
 		if err == nil {
 			continue
 		}
@@ -55,6 +60,7 @@ func createPendingRelations(ctx context.Context, tx *sql.Tx, now, sessionID, sou
 			return nil, err
 		}
 		cands[i].JudgmentID = newSyncID("rel-")
+		cands[i].Relation, cands[i].JudgmentStatus = RelationPending, StatusPending
 		_, err = tx.ExecContext(ctx, `INSERT INTO memory_relations
 			  (sync_id, source_id, target_id, relation, judgment_status, session_id, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -64,6 +70,20 @@ func createPendingRelations(ctx context.Context, tx *sql.Tx, now, sessionID, sou
 		}
 	}
 	return cands, nil
+}
+
+// chainHead follows superseded_by_relation_id to the live relation.
+func chainHead(ctx context.Context, tx *sql.Tx, pk int64) (string, error) {
+	var syncID string
+	var next sql.NullInt64
+	for {
+		err := tx.QueryRowContext(ctx, `SELECT sync_id, superseded_by_relation_id FROM memory_relations WHERE id = ?`, pk).
+			Scan(&syncID, &next)
+		if err != nil || !next.Valid {
+			return syncID, err
+		}
+		pk = next.Int64
+	}
 }
 
 // JudgeRelation resolves a pending relation. Judging an already judged one
@@ -92,6 +112,13 @@ func (s *Store) JudgeRelation(ctx context.Context, in JudgmentInput) (Judgment, 
 		}
 		if err != nil {
 			return err
+		}
+		if status == StatusSuperseded {
+			head, err := chainHead(ctx, tx, pk)
+			if err != nil {
+				return err
+			}
+			return errorf(ErrInvalidRequest, "judgment %q was superseded; judge its current head %q", in.JudgmentID, head)
 		}
 		now := s.timestamp()
 		out = Judgment{JudgmentID: in.JudgmentID, SourceSyncID: source, TargetSyncID: target,

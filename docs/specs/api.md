@@ -251,6 +251,8 @@ Respuesta:
       "project": "neugram",
       "created_at": "2026-09-14T11:02:44Z",
       "similarity": 0.83,
+      "relation": "pending",
+      "judgment_status": "pending",
       "preview": "**What**: el MCP de la capa usa mem_save, mem_search... **Where**: docs/adr/0008"
     }
   ]
@@ -263,6 +265,11 @@ transacción y en el mismo proceso; `similarity` y el umbral están en
 `specs/data-model.md` (Candidatos de conflicto). `judgment_required` es `false` con
 `candidates: []` cuando no hay ninguno. Cada candidato trae su propio
 `judgment_id`: [`mem_judge`](#mem_judge) se llama una vez por candidato.
+Cada candidato trae además `relation` y `judgment_status`: `pending` y `pending`
+si está por juzgar, o la `relation` vigente y `judged` si el par ya se juzgó
+(en cualquier dirección). Un par juzgado no se reabre: se devuelve con el
+`judgment_id` existente y no hace falta volver a llamar a `mem_judge`. Las
+reglas del par están en `specs/data-model.md` (Candidatos de conflicto).
 
 `deduped: true` significa que `normalized_hash` encontró una observación igual
 y se incrementó `duplicate_count` en vez de insertar una fila nueva; el
@@ -586,8 +593,14 @@ Volver a juzgar una relación ya juzgada no falla: marca la anterior con
 `superseded_at` y devuelve la nueva, con `superseded_relation_id` apuntando a
 la que reemplazó.
 
+Juzgar una relación `superseded` se rechaza con
+[`invalid_request`](#invalid_request) (ningún código del catálogo expresa
+"estado incompatible", y es el más cercano a un `judgment_id` que no se puede
+usar): el `message` nombra el `judgment_id` de la cabeza de la cadena, que es
+el que se juzga.
+
 Errores: [`not_found`](#not_found) · [`invalid_enum`](#invalid_enum) ·
-[`unknown_session`](#unknown_session)
+[`invalid_request`](#invalid_request) · [`unknown_session`](#unknown_session)
 
 #### `mem_session_summary`
 

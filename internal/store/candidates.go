@@ -25,14 +25,16 @@ func excludedFromCandidates(typ string, kind sql.NullString) bool {
 }
 
 type Candidate struct {
-	JudgmentID string
-	SyncID     string
-	Title      string
-	Type       string
-	Project    string
-	CreatedAt  string
-	Similarity float64
-	Preview    string
+	JudgmentID     string
+	Relation       string
+	JudgmentStatus string
+	SyncID         string
+	Title          string
+	Type           string
+	Project        string
+	CreatedAt      string
+	Similarity     float64
+	Preview        string
 }
 
 // FindCandidates runs the conflict search for an existing observation in its

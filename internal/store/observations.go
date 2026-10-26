@@ -94,12 +94,14 @@ func (s *Store) AddObservation(ctx context.Context, in NewObservation) (SaveResu
 			return err
 		}
 		if !res.Deduped {
-			if res.Candidates, err = findCandidates(ctx, tx, id); err != nil {
+			cands, err := findCandidates(ctx, tx, id)
+			if err != nil {
 				return err
 			}
-			res.Candidates, err = createPendingRelations(ctx, tx, now, in.SessionID, res.Observation.SyncID, res.Candidates)
+			res.Candidates, err = createPendingRelations(ctx, tx, now, in.SessionID, res.Observation.SyncID, cands)
+			return err
 		}
-		return err
+		return nil
 	})
 	return res, err
 }

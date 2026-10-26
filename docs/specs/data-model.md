@@ -489,6 +489,20 @@ handoff de la tarea. Un handoff se reconoce por `kind`, no solo por `type`:
 `handoff_save` escribe los dos, pero los importados conservan su `type`
 legacy (`discovery` o `config`) con `kind = 'handoff'`.
 
+Cada candidato se ata a una fila de `memory_relations` en la misma
+transacción, con un `judgment_id` propio. El par no tiene orden: A↔B es una
+sola relación sin importar cuál fue `source_id`.
+
+- Si el par ya tiene una relación `judged` (cabeza de la cadena, en cualquier
+  dirección), no se reabre: ni un alta nueva ni una revisión por `topic_key`
+  crean otra `pending`. El candidato se devuelve igual, con el `judgment_id` y
+  la `relation` de la relación existente y `judgment_status: judged`.
+- Si ya hay una `pending` en cualquier dirección, se reusa; no se crea la
+  inversa.
+- Las `pending` de candidatos que dejaron de coincidir tras un upsert se
+  dejan como están; no hay limpieza.
+- Un dedupe no crea relaciones.
+
 El umbral es relativo porque bm25 absoluto escala con el largo del título y
 con el corpus. El ratio no está acotado a 1: una fila más corta o más densa
 en esos términos rankea mejor que la propia.
