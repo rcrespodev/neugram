@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,11 +16,13 @@ import (
 )
 
 const (
-	hookBudget      = 2 * time.Second
 	minPromptRunes  = 10
 	hooksLogName    = "hooks.log"
 	unreachableCode = "daemon_unreachable"
 )
+
+// hookBudget bounds the whole hook, daemon start included.
+var hookBudget = 2 * time.Second
 
 // Events lists the hook names `neugram hook` accepts.
 var Events = []string{"session-start", "user-prompt-submit", "stop", "subagent-stop", "session-end"}
@@ -44,11 +47,19 @@ type outcome struct {
 // Run executes one hook event: it reads Claude Code's JSON from in, calls
 // the daemon and prints on out only what Claude Code must see. It fails open:
 // the exit code is 0 whatever happens (docs/specs/hooks.md, Fail-open).
-func Run(event string, in io.Reader, out, errw io.Writer, c *client.Client) int {
+func Run(event string, in io.Reader, out, errw io.Writer, c *client.Client) (code int) {
 	start := time.Now()
 	var inp input
+	defer func() {
+		if p := recover(); p != nil {
+			code = failOpen(event, inp, start, fmt.Sprintf("panic: %v", p), errw, nil)
+		}
+	}()
 	if err := json.NewDecoder(in).Decode(&inp); err != nil {
 		return failOpen(event, inp, start, "invalid_input: "+err.Error(), errw, nil)
+	}
+	if inp.SessionID == "" {
+		return failOpen(event, inp, start, "invalid_input: session_id is required", errw, nil)
 	}
 	log := openLog()
 	defer log.close()
@@ -56,14 +67,33 @@ func Run(event string, in io.Reader, out, errw io.Writer, c *client.Client) int 
 	c.Budget = hookBudget
 	c.HTTP = &http.Client{Timeout: hookBudget}
 
-	oc, err := dispatch(event, inp, c)
-	if err != nil {
-		return failOpen(event, inp, start, reason(err), errw, log)
+	type result struct {
+		oc  outcome
+		err error
 	}
-	if oc.stdout != "" {
-		io.WriteString(out, oc.stdout)
+	done := make(chan result, 1)
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				done <- result{err: fmt.Errorf("panic: %v", p)}
+			}
+		}()
+		oc, err := dispatch(event, inp, c)
+		done <- result{oc, err}
+	}()
+	var r result
+	select {
+	case r = <-done:
+	case <-time.After(hookBudget):
+		r.err = &unreachable{fmt.Errorf("no response within %s", hookBudget)}
 	}
-	log.line("event=%s session=%s dur=%s gates=%s result=%s", event, inp.SessionID, since(start), strings.Join(oc.gates, ","), oc.result)
+	if r.err != nil {
+		return failOpen(event, inp, start, reason(r.err), errw, log)
+	}
+	if r.oc.stdout != "" {
+		io.WriteString(out, r.oc.stdout)
+	}
+	log.line("event=%s session=%s dur=%s gates=%s result=%s", event, inp.SessionID, since(start), strings.Join(r.oc.gates, ","), r.oc.result)
 	return 0
 }
 
@@ -95,7 +125,7 @@ func dispatch(event string, inp input, c *client.Client) (outcome, error) {
 		err := c.Post("/prompts", map[string]string{"session_id": inp.SessionID, "content": inp.Prompt}, nil)
 		return outcome{result: "saved"}, wrap(err)
 	case "session-end":
-		return outcome{result: "ok"}, wrap(c.Post("/sessions/"+inp.SessionID+"/end", nil, nil))
+		return outcome{result: "ok"}, wrap(c.Post("/sessions/"+url.PathEscape(inp.SessionID)+"/end", nil, nil))
 	}
 	return stopEvent(event, inp, c)
 }

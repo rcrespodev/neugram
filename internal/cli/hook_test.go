@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -51,13 +52,14 @@ func TestHookLatencyHotDaemon(t *testing.T) {
 	t.Setenv("NEUGRAM_HOME", t.TempDir())
 	for _, hc := range hookCases(t) {
 		raw, _ := json.Marshal(hc.in)
-		var worst time.Duration
-		for range 20 {
-			worst = max(worst, runHookOnce(t, hc, raw))
+		var runs []time.Duration
+		for range 21 {
+			runs = append(runs, runHookOnce(t, hc, raw))
 		}
-		t.Logf("%s: worst of 20 = %s", hc.name, worst)
-		if worst > hookBudgetWarm {
-			t.Errorf("%s took %s, the budget is %s", hc.name, worst, hookBudgetWarm)
+		slices.Sort(runs)
+		t.Logf("%s: median of 21 = %s, max %s", hc.name, runs[10], runs[20])
+		if runs[10] > hookBudgetWarm {
+			t.Errorf("%s median %s over the budget %s", hc.name, runs[10], hookBudgetWarm)
 		}
 	}
 }

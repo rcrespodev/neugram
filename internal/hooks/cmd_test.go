@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rcrespodev/neugram/internal/client"
 	"github.com/rcrespodev/neugram/internal/hooks"
@@ -95,7 +96,7 @@ func TestPromptIsSavedSilently(t *testing.T) {
 
 func TestShortPromptIsNotSaved(t *testing.T) {
 	f, c := newFake(t, nil)
-	for _, p := range []string{"ok", "sí", "  1 2 3  ", "abc def ghi"[:3]} {
+	for _, p := range []string{"ok", "sí", "  1 2 3  ", "abcdefghi"} {
 		code, out, _ := run(c, "user-prompt-submit", map[string]string{"session_id": "s1", "prompt": p})
 		if code != 0 || out != "" {
 			t.Fatalf("%q: code %d out %q", p, code, out)
@@ -189,5 +190,61 @@ func TestVersionMismatchNoticeGoesToLog(t *testing.T) {
 	}
 	if !strings.Contains(logText(t), "no lo reemplazo") {
 		t.Fatalf("log: %s", logText(t))
+	}
+}
+
+func TestPanicFailsOpen(t *testing.T) {
+	newFake(t, nil)
+	var out, errw bytes.Buffer
+	code := hooks.Run("session-start", strings.NewReader(`{"session_id":"s1"}`), &out, &errw, nil)
+	if code != 0 || out.Len() != 0 || !strings.Contains(errw.String(), "panic") {
+		t.Fatalf("code %d out %q err %q", code, out.String(), errw.String())
+	}
+	if !strings.Contains(logText(t), "reason=\"panic") {
+		t.Fatalf("log: %s", logText(t))
+	}
+}
+
+func TestSlowDaemonHonorsTotalBudget(t *testing.T) {
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+	t.Setenv("NEUGRAM_HOME", t.TempDir())
+	var started sync.WaitGroup
+	started.Add(1)
+	prev := client.StartDaemon
+	client.StartDaemon = func(string) error { defer started.Done(); <-release; return nil }
+	t.Cleanup(func() { close(release); started.Wait(); slow.Close(); client.StartDaemon = prev })
+	defer hooks.SetBudget(300 * time.Millisecond)()
+	c := client.New("v1")
+	c.Addr = strings.TrimPrefix(slow.URL, "http://")
+	start := time.Now()
+	code, out, errw := run(c, "stop", map[string]any{"session_id": "s1", "transcript_path": "/t.jsonl"})
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("took %s with a 300ms budget", d)
+	}
+	if code != 0 || out != "" || !strings.Contains(errw, "daemon_unreachable") {
+		t.Fatalf("code %d out %q err %q", code, out, errw)
+	}
+}
+
+func TestMissingSessionIDIsInvalidInput(t *testing.T) {
+	f, c := newFake(t, nil)
+	for _, ev := range hooks.Events {
+		code, out, errw := run(c, ev, map[string]any{"prompt": "un prompt largo de verdad"})
+		if code != 0 || out != "" || !strings.Contains(errw, "invalid_input") || strings.Contains(errw, "daemon_unreachable") {
+			t.Fatalf("%s: code %d out %q err %q", ev, code, out, errw)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("calls %v", f.calls)
+	}
+}
+
+func TestMalformedStdinFailsOpen(t *testing.T) {
+	_, c := newFake(t, nil)
+	var out, errw bytes.Buffer
+	code := hooks.Run("stop", strings.NewReader("not json"), &out, &errw, c)
+	if code != 0 || out.Len() != 0 || !strings.Contains(errw.String(), "invalid_input") {
+		t.Fatalf("code %d out %q err %q", code, out.String(), errw.String())
 	}
 }
