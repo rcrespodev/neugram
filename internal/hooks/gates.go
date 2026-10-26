@@ -17,6 +17,8 @@ const (
 
 	toolWorktreeRegister = "mcp__neugram__worktree_register"
 	maxFilesInReason     = 10
+	maxTasksInReason     = 10
+	maxQuotedRunes       = 200
 	defaultMinFiles      = 1
 )
 
@@ -112,10 +114,18 @@ func SaveCount(r *transcript.Result) int {
 	return n
 }
 
+func truncate(s string) string {
+	r := []rune(s)
+	if len(r) <= maxQuotedRunes {
+		return s
+	}
+	return string(r[:maxQuotedRunes]) + "…"
+}
+
 func filesLine(files []string) string {
-	shown := files
-	if len(shown) > maxFilesInReason {
-		shown = shown[:maxFilesInReason]
+	shown := make([]string, 0, maxFilesInReason)
+	for _, f := range files[:min(len(files), maxFilesInReason)] {
+		shown = append(shown, truncate(f))
 	}
 	line := "`" + strings.Join(shown, "`, `") + "`"
 	if len(files) > len(shown) {
@@ -132,8 +142,11 @@ func checkPin(c TurnContext) *Violation {
 	fmt.Fprintf(&b, "**%s**\n\nEl turno tocó %s y la sesión no tiene pin.\n\n", GatePinOnMutation, filesLine(MutatedFiles(c.Turn)))
 	if len(c.OpenTasks) > 0 {
 		b.WriteString("Tareas abiertas:\n")
-		for _, t := range c.OpenTasks {
-			b.WriteString("- " + t + "\n")
+		for _, t := range c.OpenTasks[:min(len(c.OpenTasks), maxTasksInReason)] {
+			b.WriteString("- " + truncate(t) + "\n")
+		}
+		if extra := len(c.OpenTasks) - maxTasksInReason; extra > 0 {
+			fmt.Fprintf(&b, "- y %d más (`task_list`)\n", extra)
 		}
 		b.WriteString("\n")
 	}
@@ -143,14 +156,14 @@ func checkPin(c TurnContext) *Violation {
 
 func checkSave(c TurnContext) *Violation {
 	files := MutatedFiles(c.Turn)
-	min := defaultMinFiles
+	minFiles := defaultMinFiles
 	var p struct {
 		MinFiles *int `json:"min_files"`
 	}
 	if json.Unmarshal(c.Params, &p) == nil && p.MinFiles != nil {
-		min = *p.MinFiles
+		minFiles = *p.MinFiles
 	}
-	if len(files) == 0 || len(files) < min || SaveCount(c.Turn) > 0 {
+	if len(files) == 0 || len(files) < minFiles || SaveCount(c.Turn) > 0 {
 		return nil
 	}
 	return &Violation{GateSaveOnMutation, fmt.Sprintf(
@@ -188,7 +201,7 @@ func checkWorktree(c TurnContext) *Violation {
 	var cmds []string
 	for _, m := range c.Turn.Mutations {
 		if m.Worktree && m.Unresolved {
-			cmds = append(cmds, m.Command)
+			cmds = append(cmds, truncate(m.Command))
 		}
 	}
 	if len(cmds) == 0 {

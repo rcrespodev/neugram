@@ -97,3 +97,24 @@ func TestOverrideDisablesGateAndParamsReachIt(t *testing.T) {
 		t.Fatalf("min_files=2 con un archivo no bloquea: %+v", d)
 	}
 }
+
+func TestReasonIsBounded(t *testing.T) {
+	var open []string
+	for i := 0; i < 25; i++ {
+		open = append(open, "K-xxx — tarea [todo]")
+	}
+	long := strings.Repeat("a", 5000)
+	turn := &transcript.Result{
+		Mutations: []transcript.Mutation{{Tool: "Bash", Path: "$D/a", Command: "git worktree add " + long, Worktree: true, Unresolved: true}},
+		Worktrees: []transcript.Worktree{{Tool: "Bash", Unresolved: true}},
+	}
+	d := Evaluate(TurnContext{OpenTasks: open, Turn: turn}, nil)
+	if got := strings.Count(d.Violation.Reason, "- K-"); got != maxTasksInReason || !strings.Contains(d.Violation.Reason, "y 15 más") {
+		t.Fatalf("tareas listadas = %d:\n%s", got, d.Violation.Reason)
+	}
+	turn.Saves = []transcript.Call{{Tool: "mcp__neugram__mem_save"}}
+	d = Evaluate(TurnContext{Pinned: true, Turn: turn}, nil)
+	if d.Violation == nil || len(d.Violation.Reason) > 1000 || !strings.Contains(d.Violation.Reason, "…") {
+		t.Fatalf("el comando no se truncó: %+v", d)
+	}
+}
