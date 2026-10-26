@@ -163,14 +163,6 @@ func TestTaskListForwardsFiltersAndReturnsDaemonJSON(t *testing.T) {
 	}
 }
 
-func TestUnimplementedToolReportsNotImplemented(t *testing.T) {
-	cs := connect(t, daemonAt(t, http.NotFoundHandler()))
-	res, text := callText(t, cs, "task_status", map[string]any{"session_id": "s", "status": "done"})
-	if !res.IsError || !strings.Contains(text, `"not_implemented"`) {
-		t.Fatalf("res = %v %s", res.IsError, text)
-	}
-}
-
 func TestNewNeverAsksToReplaceTheDaemon(t *testing.T) {
 	t.Setenv("NEUGRAM_HOME", t.TempDir())
 	var shutdown bool

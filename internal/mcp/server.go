@@ -84,7 +84,9 @@ func (s *Server) handler(name string) sdk.ToolHandler {
 func (s *Server) call(name string, args map[string]any, out *json.RawMessage) error {
 	switch name {
 	case "task_list":
-		return s.client.Get("/tasks"+queryOf(args), out)
+		return s.client.Get("/tasks"+queryOf(without(args, "session_id")), out)
+	case "task_pin", "task_status", "task_show", "worktree_register", "handoff_save":
+		return s.callFlow(name, args, out)
 	case "mem_save":
 		return s.memSave(args, out)
 	case "mem_update":
