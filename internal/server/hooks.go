@@ -12,6 +12,7 @@ import (
 )
 
 func (s *Server) routesHooks() {
+	s.mux.HandleFunc("POST /hooks/session-start", s.hookSessionStart)
 	s.mux.HandleFunc("POST /hooks/stop", func(w http.ResponseWriter, r *http.Request) { s.hookStop(w, r, false) })
 	s.mux.HandleFunc("POST /hooks/subagent-stop", func(w http.ResponseWriter, r *http.Request) { s.hookStop(w, r, true) })
 }

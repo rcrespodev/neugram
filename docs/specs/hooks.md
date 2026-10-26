@@ -66,12 +66,17 @@ Es idempotente: lo único que escribe es la fila de la sesión.
 2. Salida a stdout, en este orden:
    - `CLAUDE_CODE_SESSION_ID=<id>`: **primera línea, en todo `source`**. La sesión no puede leer su propio id y las tools MCP lo piden como argumento (`specs/api.md#convenciones`); el hook es la única fuente. Tras `/clear` el id es nuevo, así que la línea se vuelve a imprimir.
    - Instrucciones: parte generada + parte libre (`specs/instructions-and-gates.md`), con override del producto de la tarea pineada si la hay. En el paso 3 solo la generada.
-   - Estado del pin: `Pin: <key> — <título> [<status>]`, `Pin: none`, o `Sin pin todavía. Fijalo con task_pin antes de tocar archivos.` seguido de las tareas abiertas (`status != done`) con producto y status.
-   - Último handoff de la tarea pineada, content entero. Si no hay pin, el handoff más reciente cuya sesión tenía el mismo `cwd`, marcado como pista.
-   - Worktrees registrados de la tarea pineada con vivo/muerto.
+   - Estado del pin: `Pin: <key> — <título> [<status>]`, `Pin: none`, o `Sin pin todavía. Fijalo con task_pin antes de tocar archivos.` seguido de las tareas abiertas (`status != done`) como `<key> — <título> [<status>] (<producto>)` (`sin producto` si no tiene). Se listan las 10 primeras, cada línea acotada a 200 caracteres, y `- y N más (task_list)` si hay más: el mismo tope que los gates.
+   - Último handoff de la tarea pineada, content entero con tope de 12000 caracteres (si lo pasa, se corta y se agrega `[handoff truncado: task_show trae el resto]`). Si no hay pin, el handoff más reciente cuya sesión tenía el mismo `cwd`, bajo el encabezado `Último handoff del directorio (pista, no es de tu tarea)`. Con pin `none` no se imprime handoff.
+   - Worktrees registrados de la tarea pineada, cada uno `<path> (<branch>) [vivo|muerto]`.
+
+La salida es una función del estado: dos llamadas iguales dan el mismo texto y
+dejan una sola fila de sesión. Una entrada sin `session_id`, con `cwd` relativo
+o con un `source` fuera de los cinco responde `400 invalid_request`.
 
 En `clear` la sesión nueva no hereda pin: sale sin pin y con la pista del
-último pin o handoff del mismo `cwd`.
+último pin (`Pista: la última sesión pineada de este directorio tenía pin <key>; no se hereda.`)
+y del último handoff del mismo `cwd`.
 
 ## `user-prompt-submit`
 
