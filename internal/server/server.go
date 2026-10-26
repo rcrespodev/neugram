@@ -3,11 +3,8 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,12 +35,11 @@ type Server struct {
 
 func New(st *store.Store, opts Options) *Server {
 	s := &Server{st: st, opts: opts, started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
+	s.routesMemory()
+	s.routesFlow()
+	s.routesHooks()
 	s.mux.HandleFunc("GET /health", s.health)
 	s.mux.HandleFunc("POST /shutdown", s.shutdown)
-	s.mux.HandleFunc("GET /tasks", s.listTasks)
-	s.mux.HandleFunc("GET /tasks/{key}", s.showTask)
-	s.mux.HandleFunc("GET /products", s.listProducts)
-	s.mux.HandleFunc("GET /worktrees", s.listWorktrees)
 	return s
 }
 
@@ -101,89 +97,6 @@ func (s *Server) shutdown(w http.ResponseWriter, r *http.Request) {
 	s.stopOnce.Do(func() { close(s.stop) })
 }
 
-func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
-	v := r.URL.Query()
-	for _, unsupported := range []string{"tree", "where"} {
-		if v.Get(unsupported) != "" && v.Get(unsupported) != "false" {
-			s.fail(w, r, &store.Error{Code: "invalid_request", Message: unsupported + " is not supported yet"})
-			return
-		}
-	}
-	q := store.TaskQuery{Statuses: multi(v["status"]), Product: v.Get("product"), Parent: v.Get("parent")}
-	var err error
-	if q.RootsOnly, err = boolParam(v.Get("roots_only"), false, "roots_only"); err == nil {
-		q.IncludeDone, err = boolParam(v.Get("include_done"), false, "include_done")
-	}
-	if err == nil {
-		q.Limit, q.Offset, err = page(v.Get("limit"), v.Get("offset"))
-	}
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	tasks, total, err := s.st.ListTasks(r.Context(), q)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "limit": q.Limit, "offset": q.Offset, "tree": false, "tasks": tasks})
-}
-
-func (s *Server) showTask(w http.ResponseWriter, r *http.Request) {
-	v := r.URL.Query()
-	q := store.TaskShowQuery{ObservationsLimit: store.DefaultObservationsLimit}
-	var err error
-	q.IncludeSubtasks, err = boolParam(v.Get("include_subtasks"), true, "include_subtasks")
-	if err == nil && v.Get("observations_limit") != "" {
-		q.ObservationsLimit, err = intParam(v.Get("observations_limit"), "observations_limit")
-	}
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	d, err := s.st.GetTask(r.Context(), r.PathValue("key"), q)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, d)
-}
-
-func (s *Server) listProducts(w http.ResponseWriter, r *http.Request) {
-	v := r.URL.Query()
-	q := store.ProductQuery{Q: v.Get("q")}
-	var err error
-	if q.Limit, q.Offset, err = page(v.Get("limit"), v.Get("offset")); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	products, total, err := s.st.ListProducts(r.Context(), q)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "limit": q.Limit, "offset": q.Offset, "products": products})
-}
-
-func (s *Server) listWorktrees(w http.ResponseWriter, r *http.Request) {
-	v := r.URL.Query()
-	q := store.WorktreeQuery{Task: v.Get("task_id"), Repo: v.Get("repo")}
-	var err error
-	if q.AliveOnly, err = boolParam(v.Get("alive"), false, "alive"); err == nil {
-		q.Limit, q.Offset, err = page(v.Get("limit"), v.Get("offset"))
-	}
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	wts, total, err := s.st.ListWorktrees(r.Context(), q)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "limit": q.Limit, "offset": q.Offset, "worktrees": wts})
-}
-
 // multi accepts both ?status=a&status=b and ?status=a,b.
 func multi(values []string) []string {
 	var out []string
@@ -236,64 +149,4 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(body)
-}
-
-type apiError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Hint    string `json:"hint,omitempty"`
-	Details any    `json:"details,omitempty"`
-}
-
-var statusByCode = map[string]int{
-	"invalid_request": http.StatusBadRequest,
-	"unknown_task":    http.StatusNotFound,
-	"unknown_session": http.StatusNotFound,
-	"not_found":       http.StatusNotFound,
-	"invalid_enum":    http.StatusUnprocessableEntity,
-	"invalid_type":    http.StatusUnprocessableEntity,
-}
-
-// fail writes the error envelope of docs/specs/api.md; unknown_task carries
-// the open tasks so the caller can pick one.
-func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
-	var se *store.Error
-	if !errors.As(err, &se) {
-		s.logInternal(r, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]apiError{"error": {
-			Code: "internal", Message: err.Error(), Hint: "mirá " + s.opts.LogPath,
-		}})
-		return
-	}
-	e := apiError{Code: se.Code, Message: se.Message}
-	switch se.Code {
-	case "unknown_task":
-		e.Hint = "neugram task ls"
-		if open, _, err := s.st.ListTasks(r.Context(), store.TaskQuery{Limit: store.MaxLimit}); err == nil {
-			names := make([]string, len(open))
-			for i, t := range open {
-				names[i] = t.TaskKey + " — " + t.Title
-			}
-			e.Details = map[string]any{"open_tasks": names}
-		}
-	case "invalid_enum":
-		e.Hint = "status ∈ " + strings.Join(store.TaskStatuses, " · ")
-	}
-	status, ok := statusByCode[se.Code]
-	if !ok {
-		status = http.StatusInternalServerError
-	}
-	writeJSON(w, status, map[string]apiError{"error": e})
-}
-
-func (s *Server) logInternal(r *http.Request, err error) {
-	if s.opts.LogPath == "" {
-		return
-	}
-	f, ferr := os.OpenFile(s.opts.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if ferr != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintf(f, "%s serve %s %s internal: %v\n", time.Now().UTC().Format(store.TimeLayout), r.Method, r.URL.Path, err)
 }
