@@ -16,31 +16,31 @@ reaprender nada) · **N** = propio de neugram.
 
 ## Índice
 
-### Tools MCP (`neugram mcp`, stdio) — 19
+### Tools MCP (`neugram mcp`, stdio) — 19 (10 en el paso 3, 9 en el 4)
 
-| Tool | Proc. | Qué hace |
-|---|---|---|
-| [`mem_save`](#mem_save) | E | Guarda una observación |
-| [`mem_update`](#mem_update) | E | Modifica una observación existente |
-| [`mem_search`](#mem_search) | E | Búsqueda FTS con filtros por tarea, repo, tipo y columnas |
-| [`mem_context`](#mem_context) | E | Contexto reciente del repo o de la tarea |
-| [`mem_get_observation`](#mem_get_observation) | E | Una observación entera por `sync_id` |
-| [`mem_save_prompt`](#mem_save_prompt) | E | Guarda un prompt del usuario (compatibilidad) |
-| [`mem_judge`](#mem_judge) | E | Juzga un candidato de conflicto |
-| [`mem_session_summary`](#mem_session_summary) | E | Resumen de cierre cuando no hay handoff |
-| [`mem_timeline`](#mem_timeline) | E | Observaciones vecinas de la misma sesión |
-| [`mem_review`](#mem_review) | E | Lista o marca revisadas las observaciones vencidas |
-| [`mem_current_project`](#mem_current_project) | E | Repo del cwd, producto y tarea pineada |
-| [`task_pin`](#task_pin) | N | Fija la tarea de la sesión; crea la tarea si hace falta |
-| [`task_list`](#task_list) | N | Tareas con producto, status, sesiones y worktrees |
-| [`task_status`](#task_status) | N | Cambia el status de una tarea |
-| [`task_show`](#task_show) | N | Ficha completa de una tarea |
-| [`worktree_register`](#worktree_register) | N | Registra un `git worktree` de la tarea |
-| [`handoff_save`](#handoff_save) | N | Guarda el handoff de cierre de sesión |
-| [`progress_write`](#progress_write) | N | Reporte de progreso de un subagente |
-| [`progress_list`](#progress_list) | N | Lee reportes de progreso |
+| Tool | Proc. | Qué hace | Paso |
+|---|---|---|---|
+| [`mem_save`](#mem_save) | E | Guarda una observación | 3 |
+| [`mem_update`](#mem_update) | E | Modifica una observación existente | 3 |
+| [`mem_search`](#mem_search) | E | Búsqueda FTS con filtros por tarea, repo, tipo y columnas | 3 |
+| [`mem_context`](#mem_context) | E | Contexto reciente del repo o de la tarea | 4 |
+| [`mem_get_observation`](#mem_get_observation) | E | Una observación entera por `sync_id` | 4 |
+| [`mem_save_prompt`](#mem_save_prompt) | E | Guarda un prompt del usuario (compatibilidad) | 4 |
+| [`mem_judge`](#mem_judge) | E | Juzga un candidato de conflicto | 3 |
+| [`mem_session_summary`](#mem_session_summary) | E | Resumen de cierre cuando no hay handoff | 4 |
+| [`mem_timeline`](#mem_timeline) | E | Observaciones vecinas de la misma sesión | 4 |
+| [`mem_review`](#mem_review) | E | Lista o marca revisadas las observaciones vencidas | 4 |
+| [`mem_current_project`](#mem_current_project) | E | Repo de la sesión, producto y tarea pineada | 4 |
+| [`task_pin`](#task_pin) | N | Fija la tarea de la sesión; crea la tarea si hace falta | 3 |
+| [`task_list`](#task_list) | N | Tareas con producto, status, sesiones y worktrees | 3 |
+| [`task_status`](#task_status) | N | Cambia el status de una tarea | 3 |
+| [`task_show`](#task_show) | N | Ficha completa de una tarea | 3 |
+| [`worktree_register`](#worktree_register) | N | Registra un `git worktree` de la tarea | 3 |
+| [`handoff_save`](#handoff_save) | N | Guarda el handoff de cierre de sesión | 3 |
+| [`progress_write`](#progress_write) | N | Reporte de progreso de un subagente | 4 |
+| [`progress_list`](#progress_list) | N | Lee reportes de progreso | 4 |
 
-### HTTP del daemon (`http://127.0.0.1:7438`) — 43
+### HTTP del daemon (`http://127.0.0.1:7438`) — 44
 
 | Método y ruta | Proc. | Consumidor |
 |---|---|---|
@@ -63,6 +63,7 @@ reaprender nada) · **N** = propio de neugram.
 | [`POST /sessions`](#post-sessions) | E | hook |
 | [`GET /sessions/{id}`](#get-sessionsid) | E | UI, MCP |
 | [`POST /sessions/{id}/pin`](#post-sessionsidpin) | N | MCP, CLI, UI |
+| [`PUT /sessions/{id}/handoff`](#put-sessionsidhandoff) | N | MCP |
 | [`POST /sessions/{id}/end`](#post-sessionsidend) | E | hook |
 | [`GET /tasks`](#get-tasks) | N | MCP, CLI, UI |
 | [`POST /tasks`](#post-tasks) | N | MCP, CLI |
@@ -88,6 +89,14 @@ reaprender nada) · **N** = propio de neugram.
 | [`POST /hooks/stop`](#post-hooksstop) | N | hook |
 | [`POST /hooks/subagent-stop`](#post-hookssubagent-stop) | N | hook |
 
+Reparto por paso: las tools marcadas **3** y las rutas que usan entran en el
+paso 3; las marcadas **4** entran antes del corte (`roadmap.md`). Las rutas
+que solo consume una tool del paso 4 —`GET /observations/{sync_id}/timeline`,
+`GET /review`, `POST /review/mark_reviewed`, `GET /progress` y
+`POST /progress`— se implementan con ella. La spec de las del paso 4 queda
+completa en este documento; lo que cambia es cuándo existen. `mem_context` no
+tiene ruta HTTP propia todavía: se define con la tool, en el paso 4.
+
 ## Convenciones
 
 Valen para las dos superficies salvo donde se aclara.
@@ -107,9 +116,26 @@ Valen para las dos superficies salvo donde se aclara.
   FTS5 exige y **no aparecen en ninguna respuesta** — el envelope heredado de
   Engram traía `id`, y esa clave desaparece en neugram. Prefijos:
   `obs-<32 hex>`, `prm-<32 hex>`, `rel-<32 hex>`.
-- **`session_id`** sale de `CLAUDE_CODE_SESSION_ID` en el entorno del proceso
-  MCP; ninguna tool lo pide. En HTTP es un campo obligatorio del body de toda
-  escritura, porque el daemon no tiene entorno del que deducirlo.
+- **`session_id` es un argumento explícito de las tools, nunca del entorno.**
+  Es obligatorio en toda tool que escribe (`mem_save`, `mem_update`,
+  `mem_judge`, `task_pin`, `task_status`, `worktree_register`, `handoff_save`
+  y, en el paso 4, `mem_save_prompt`, `mem_session_summary`, `progress_write`
+  y `mem_review` con `mark_reviewed`) y opcional en las lecturas, donde solo
+  sirve para el pin y el `project` por defecto. El proceso MCP **no** lee
+  `CLAUDE_CODE_SESSION_ID` del entorno y no hay fallback: sobrevive a `/clear`,
+  que cambia de sesión sin cambiar de proceso, así que un id heredado del
+  entorno cae en la sesión anterior con su pin. El valor sale de la primera
+  línea que imprime `session-start` (`CLAUDE_CODE_SESSION_ID=<id>`) en todo
+  `source`. Las lecturas por `sync_id` (`mem_get_observation`,
+  `mem_timeline`) no lo toman. En HTTP es un campo obligatorio del body de
+  toda escritura, o el `{id}` de la ruta.
+- **Un `session_id` sin fila falla con [`unknown_session`](#unknown_session)**;
+  ni el MCP ni el daemon crean sesiones al vuelo. La crea el hook
+  `session-start`; si no corrió (daemon caído al arrancar), el `hint` pide
+  recargar la sesión en vez de inventar una con un `directory` supuesto.
+- **Pie `**Task**` con pin `none`.** Si el content ya trae un pie
+  `**Task**: ninguna — <por qué>`, se respeta. Si falta, el daemon escribe
+  `**Task**: ninguna`, porque el motivo solo lo sabe quien escribe.
 - **`where`** es un objeto `{columna: valor}` sobre columnas fijas o custom de
   la tabla consultada. Igualdad exacta; `null` filtra `IS NULL`; sin
   operadores en la primera versión. Una columna inexistente falla con
@@ -124,7 +150,8 @@ Valen para las dos superficies salvo donde se aclara.
   próximo `tools/list`.
 - **Timestamps** ISO 8601 UTC con `Z`, como los escribe `internal/timeutil`.
 - **`project`** es el repo, derivado por `internal/project` (git remote
-  → raíz git → basename). No es el producto: el producto vive en `products` y
+  → raíz git → basename). Cuando una tool lo acepta y no se pasa, vale
+  `sessions.project` de la sesión: el MCP no conoce el cwd vivo del agente. No es el producto: el producto vive en `products` y
   cuelga de la tarea.
 - **Soft delete.** Toda lectura filtra `deleted_at IS NULL`; no hay parámetro
   para incluir borradas.
@@ -156,7 +183,10 @@ Valen para las dos superficies salvo donde se aclara.
 
 Servidor `neugram mcp` (stdio). Cliente fino: traduce cada tool a una llamada
 HTTP al daemon y devuelve su JSON. No abre la base y no tiene lógica propia.
-Es el único MCP de memoria que ve el agente tras el corte (ADR 0007).
+Se registra con el nombre `neugram`, así que el agente ve las tools como
+`mcp__neugram__<tool>`. Es el único MCP de memoria que ve el agente tras el
+corte (ADR 0007), que ocurre en el paso 4; en el paso 3 corre en un ensayo
+aislado y solo están las tools marcadas **3** en el índice.
 
 Toda tool devuelve un único bloque de contenido `text` con el JSON del
 envelope. Un error es un resultado con `isError: true` y el mismo objeto
@@ -172,14 +202,15 @@ agente.
 | Parámetro | Tipo | Oblig. | Default | Notas |
 |---|---|---|---|---|
 | `title` | string | sí | — | Verbo + qué, corto y buscable |
-| `content` | string | sí | — | El daemon agrega o corrige el pie `**Task**` |
+| `content` | string | sí | — | El daemon agrega o corrige el pie `**Task**` (con pin `none`, ver Convenciones) |
 | `type` | enum | sí | — | `bugfix` · `decision` · `architecture` · `discovery` · `pattern` · `config` · `preference` · `handoff` · `session_summary` |
 | `task_id` | string **key** | no | pin de la sesión | `none` guarda sin tarea |
 | `topic_key` | string | no | `null` | Upsert por `(topic_key, project, scope)`. Ver [`topic_key_collision`](#topic_key_collision) |
 | `scope` | enum | no | `project` | `project` · `personal` |
-| `project` | string | no | repo del cwd | Override explícito del repo de procedencia |
-| `capture_prompt` | bool | no | `true` | `false` solo para artefactos generados por máquina |
+| `project` | string | no | `sessions.project` de la sesión | Override explícito del repo de procedencia |
+| `capture_prompt` | bool | no | — | Se acepta por compatibilidad con el CLAUDE.md y se ignora: el prompt lo captura el hook `user-prompt-submit` |
 | *custom* | según `schema_fields` | según `required` | — | Columnas de `observations` |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 ```json
 {
@@ -241,7 +272,8 @@ corrigió.
 Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task) ·
 [`invalid_type`](#invalid_type) · [`required_field`](#required_field) ·
 [`invalid_enum`](#invalid_enum) · [`invalid_field`](#invalid_field) ·
-[`topic_key_collision`](#topic_key_collision)
+[`topic_key_collision`](#topic_key_collision) ·
+[`unknown_session`](#unknown_session)
 
 #### `mem_update`
 
@@ -260,6 +292,7 @@ silencio.
 | `scope` | enum | no | — | |
 | `kind` | enum \| null | no | — | `handoff` o `null` |
 | *custom* | según `schema_fields` | no | — | |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 Sin ningún campo además de `sync_id`, la llamada falla con
 [`invalid_request`](#invalid_request).
@@ -293,7 +326,8 @@ Sin ningún campo además de `sync_id`, la llamada falla con
 Errores: [`not_found`](#not_found) · [`invalid_request`](#invalid_request) ·
 [`unknown_task`](#unknown_task) · [`invalid_type`](#invalid_type) ·
 [`invalid_enum`](#invalid_enum) · [`invalid_field`](#invalid_field) ·
-[`topic_key_collision`](#topic_key_collision)
+[`topic_key_collision`](#topic_key_collision) ·
+[`unknown_session`](#unknown_session)
 
 #### `mem_search`
 
@@ -318,6 +352,7 @@ columna. Con `task_id` trae la tarea entera cruzando repos, que es lo que
 | `full` | bool | no | `false` | `true` devuelve el content entero |
 | `limit` | integer | no | `20` | Máx. 200 |
 | `offset` | integer | no | `0` | |
+| `session_id` | string | no | — | Opcional. Solo para el `project` por defecto. No activa el pin: el filtro por tarea sigue siendo `task_id` |
 
 ```json
 { "query": "parent_task_id jerarquía", "task_id": "engram-fork-debat", "full": false, "limit": 5 }
@@ -364,7 +399,7 @@ Errores: [`invalid_field`](#invalid_field) · [`unknown_task`](#unknown_task) ·
 #### `mem_context`
 
 **E** · Contexto reciente sin buscar nada. Sin `task_id` se comporta como en
-Engram: las últimas observaciones del repo del cwd. Con `task_id` devuelve
+Engram: las últimas observaciones del repo de la sesión. Con `task_id` devuelve
 además el último handoff de la tarea y sus worktrees vivos.
 
 | Parámetro | Tipo | Oblig. | Default | Notas |
@@ -372,8 +407,9 @@ además el último handoff de la tarea y sus worktrees vivos.
 | `task_id` | string **key** | no | — | Sin él, no usa el pin: devuelve el contexto del repo |
 | `include_ancestors` | bool | no | `true` | Suma las observaciones de los ancestros de la tarea |
 | `include_subtasks` | bool | no | `false` | Suma las de su subárbol entero |
-| `project` | string | no | repo del cwd | |
+| `project` | string | no | `sessions.project` de la sesión | Con `session_id` ausente no hay default: hay que pasarlo |
 | `limit` | integer | no | `20` | Máx. 100 |
+| `session_id` | string | no | — | Opcional. Solo para el `project` por defecto. No activa el pin: el filtro por tarea sigue siendo `task_id` |
 
 ```json
 { "task_id": "TRIPULSE-3652-1", "limit": 3 }
@@ -489,7 +525,8 @@ deduplica contra lo que el hook ya escribió en la misma sesión.
 | Parámetro | Tipo | Oblig. | Default | Notas |
 |---|---|---|---|---|
 | `content` | string | sí | — | Verbatim, no parafraseado |
-| `project` | string | no | repo del cwd | |
+| `project` | string | no | `sessions.project` de la sesión | Con `session_id` ausente no hay default: hay que pasarlo |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 ```json
 {
@@ -518,6 +555,7 @@ llamada por candidato, con el `judgment_id` de ese candidato.
 | `reason` | string | no | — | Por qué |
 | `evidence` | string | no | — | Qué lo respalda |
 | `confidence` | number | no | — | 0–1 |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 ```json
 {
@@ -546,7 +584,8 @@ Volver a juzgar una relación ya juzgada no falla: marca la anterior con
 `superseded_at` y devuelve la nueva, con `superseded_relation_id` apuntando a
 la que reemplazó.
 
-Errores: [`not_found`](#not_found) · [`invalid_enum`](#invalid_enum)
+Errores: [`not_found`](#not_found) · [`invalid_enum`](#invalid_enum) ·
+[`unknown_session`](#unknown_session)
 
 #### `mem_session_summary`
 
@@ -559,6 +598,7 @@ el fallback para sesiones `none` o cuando no se corrió `/handoff`.
 | `content` | string | sí | — |
 | `task_id` | string **key** | no | pin de la sesión |
 | `title` | string | no | `Session summary <session_id corto>` |
+| `session_id` | string | sí | — |
 
 ```json
 {
@@ -572,7 +612,8 @@ el fallback para sesiones `none` o cuando no se corrió `/handoff`.
 }
 ```
 
-Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task)
+Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task) ·
+[`unknown_session`](#unknown_session)
 
 #### `mem_timeline`
 
@@ -611,11 +652,12 @@ verificar contra la evidencia actual antes de usarlo.
 | Parámetro | Tipo | Oblig. | Default | Notas |
 |---|---|---|---|---|
 | `action` | enum | sí | — | `list` · `mark_reviewed` |
-| `project` | string | no | repo del cwd | Solo `list` |
+| `project` | string | no | `sessions.project` de la sesión | Solo `list` |
 | `type` | string | no | — | Solo `list` |
 | `limit` | integer | no | `20` | Solo `list`; máx. 100 |
 | `sync_id` | string | sí con `mark_reviewed` | — | |
 | `next_review_days` | integer | no | `90` | Solo `mark_reviewed` |
+| `session_id` | string | sí con `mark_reviewed` | — | Con `list` es opcional y solo fija el `project` por defecto |
 
 `list`:
 
@@ -649,10 +691,12 @@ Errores: [`not_found`](#not_found) · [`invalid_enum`](#invalid_enum)
 
 #### `mem_current_project`
 
-**E** · Qué repo ve neugram desde el cwd, con qué producto y qué tarea está
+**E** · Qué repo ve neugram desde el directorio de la sesión (`sessions.directory`), con qué producto y qué tarea está
 pineada la sesión. Es la primera llamada recomendada de una sesión.
 
-Sin parámetros.
+| Parámetro | Tipo | Oblig. | Default | Notas |
+|---|---|---|---|---|
+| `session_id` | string | no | — | Opcional. Sin él la respuesta omite `pin`, `session_id` y `worktree`, igual que [`GET /project/current`](#get-projectcurrent) |
 
 ```json
 {
@@ -702,6 +746,7 @@ turno que va a mutar archivos: el gate `require-task-pin-on-mutation` lo exige.
 | `tracker` | string | no | — | `clickup:<id>:<url>` |
 | `notes` | string | no | — | |
 | *custom* | según `schema_fields` | según `required` | — | Columnas de `tasks` |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 Con una `key` inexistente y sin `title`, falla con
 [`unknown_task`](#unknown_task) y el `hint` lista las tareas abiertas. Repetir
@@ -735,7 +780,8 @@ y `pinned_at` con valor: eso es lo que distingue "pin explícito a ninguna" de
 
 Errores: [`unknown_task`](#unknown_task) · [`task_exists`](#task_exists) ·
 [`unknown_product`](#unknown_product) · [`invalid_parent`](#invalid_parent) ·
-[`required_field`](#required_field) · [`invalid_enum`](#invalid_enum)
+[`required_field`](#required_field) · [`invalid_enum`](#invalid_enum) ·
+[`unknown_session`](#unknown_session)
 
 #### `task_list`
 
@@ -752,6 +798,7 @@ status, actividad y worktrees vivos.
 | `tree` | bool | no | `false` | Anida cada tarea dentro de su padre en `children`, hasta los tres niveles |
 | `where` | object | no | — | Columnas fijas o custom de `tasks` |
 | `limit` | integer | no | `50` | Máx. 200 |
+| `session_id` | string | no | — | Opcional. Solo para resolver el pin y el `project` por defecto; sin él no hay pin implícito |
 
 ```json
 { "product": "Microservices", "tree": true }
@@ -828,6 +875,9 @@ agente; ningún hook llama esta tool.
 |---|---|---|---|
 | `task_id` | string **key** | no | pin de la sesión |
 | `status` | enum | sí | — |
+| `session_id` | string | sí | — |
+
+`session_id` es obligatorio aunque la tool cambie una tarea y no el pin: queda como autora del cambio en el log.
 
 `status` ∈ `todo` · `in-progress` · `review` · `blocked` · `done`.
 
@@ -855,7 +905,8 @@ aplica y el número viaja en la respuesta como aviso. Nadie más que el usuario
 decide cuándo una tarea está cerrada.
 
 Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task) ·
-[`invalid_enum`](#invalid_enum)
+[`invalid_enum`](#invalid_enum) ·
+[`unknown_session`](#unknown_session)
 
 #### `task_show`
 
@@ -867,6 +918,7 @@ liveness, handoffs y reportes de progreso.
 | `task_id` | string **key** | no | pin de la sesión | |
 | `include_subtasks` | bool | no | `true` | Agrega `children` y las observaciones de todo el subárbol, no sólo de las hijas directas |
 | `observations_limit` | integer | no | `10` | Máx. 100; `0` las omite |
+| `session_id` | string | no | — | Opcional. Solo para resolver el pin y el `project` por defecto; sin él no hay pin implícito |
 
 ```json
 {
@@ -972,6 +1024,7 @@ sin esto.
 | `purpose` | string | no | — | Una línea |
 | `task_id` | string **key** | no | pin de la sesión | |
 | *custom* | según `schema_fields` | según `required` | — | Columnas de `worktrees` |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 ```json
 {
@@ -1006,19 +1059,22 @@ de responder; no se guarda.
 
 Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task) ·
 [`invalid_request`](#invalid_request) (`path` relativo) ·
-[`required_field`](#required_field)
+[`required_field`](#required_field) ·
+[`unknown_session`](#unknown_session)
 
 #### `handoff_save`
 
 **N** · Cierre de sesión. Es un `mem_save` con `type=handoff`, `kind=handoff` y
 uno por sesión: repetirlo actualiza el mismo registro. Es lo que
-`session-start` le entrega a la sesión siguiente.
+`session-start` le entrega a la sesión siguiente. Cuerpo de
+[`PUT /sessions/{id}/handoff`](#put-sessionsidhandoff).
 
 | Parámetro | Tipo | Oblig. | Default | Notas |
 |---|---|---|---|---|
 | `content` | string | sí | — | Markdown; el daemon agrega el pie `**Task**` |
 | `task_id` | string **key** | no | pin de la sesión | |
 | `title` | string | no | `Handoff <key>: <primera línea del State>` | |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 ```json
 {
@@ -1037,7 +1093,8 @@ uno por sesión: repetirlo actualiza el mismo registro. Es lo que
 
 `replaced: true` cuando la sesión ya tenía handoff y este lo pisó.
 
-Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task)
+Errores: [`no_pin`](#no_pin) · [`unknown_task`](#unknown_task) ·
+[`unknown_session`](#unknown_session)
 
 #### `progress_write`
 
@@ -1054,6 +1111,7 @@ volcarle todo al padre. Es lo que exige el gate `require-progress-report` en
 | `summary` | array[string] | sí | — | 5 a 10 |
 | `next_steps` | array[string] | sí | — | 3 a 6 |
 | `refs` | object | no | — | `{engram_topics, files, links}`; `files` como `path:line` |
+| `session_id` | string | sí | — | Obligatorio y explícito: el valor que imprime `session-start`. Sin fallback al entorno |
 
 ```json
 {
@@ -1177,8 +1235,8 @@ la UI se sirve del mismo puerto en `/` y sus rutas de página están en
 - Sin autenticación: un usuario, loopback, sin login (ADR 0005).
 - **`session_id` es obligatorio en el body de toda escritura.** El daemon no
   tiene entorno del que deducirlo. Una escritura con un `session_id` que no
-  existe en `sessions` falla con [`unknown_session`](#unknown_session): la
-  sesión la crea `POST /sessions` o `POST /hooks/session-start`.
+  existe en `sessions` falla con [`unknown_session`](#unknown_session), sin
+  crearla: la sesión la crea `POST /sessions` o `POST /hooks/session-start`.
 - Los parámetros de lectura van en query string; `where` y otros objetos se
   mandan como JSON urlencodeado: `?where=%7B%22impact%22%3A%22high%22%7D`.
 - Todo listado devuelve `{total, limit, offset, <colección>}`.
@@ -1570,6 +1628,29 @@ Errores: `404` [`unknown_task`](#unknown_task) ·
 
 Errores: `404` [`unknown_session`](#unknown_session)
 
+#### `PUT /sessions/{id}/handoff`
+
+**N** · Guarda el handoff de la sesión: upsert por `(session, kind=handoff)`.
+Cuerpo de [`handoff_save`](#handoff_save). `POST /observations` no sabe
+resolver ese upsert, y por eso la ruta es propia. `201` la primera vez, `200`
+cuando reemplaza.
+
+| Campo | Tipo | Oblig. | Default | Notas |
+|---|---|---|---|---|
+| `content` | string | sí | — | Markdown; el daemon agrega o corrige el pie `**Task**` |
+| `task_id` | string **key** | no | pin de la sesión | |
+| `title` | string | no | `Handoff <key>: <primera línea del State>` | |
+
+El `{id}` es el `session_id`. Response: la de [`handoff_save`](#handoff_save),
+con `replaced: true` cuando la sesión ya tenía handoff.
+
+```json
+{ "content": "## State\nAPI definida en un solo doc...", "task_id": "TRIPULSE-3652" }
+```
+
+Errores: `404` [`unknown_session`](#unknown_session) ·
+[`unknown_task`](#unknown_task) · `422` [`no_pin`](#no_pin)
+
 ### Flujo
 
 #### `GET /tasks`
@@ -1824,6 +1905,9 @@ devuelve las partes por separado).
 `source` es `global` o `product_override`. El override **reemplaza** a la
 global; no se concatenan.
 
+En el paso 3 sirve solo la parte generada, sin `schema_fields` (todavía no
+existen), y `free` viene vacío; las instrucciones editables entran en el paso 4.
+
 Errores: `404` [`unknown_product`](#unknown_product)
 
 #### `PUT /instructions`
@@ -1951,7 +2035,8 @@ worktrees.
 | `cwd` | string | sí | — |
 | `source` | enum | sí | — |
 
-`source` ∈ `startup` · `resume` · `clear` · `compact`.
+`source` ∈ `startup` · `resume` · `clear` · `compact` · `fork`. En todos el
+`stdout` abre con `CLAUDE_CODE_SESSION_ID=<id>`.
 
 ```json
 { "session_id": "e8d02241-459e-4faf-9438-165a3062dbb1", "cwd": "/home/rcrespodev/rcrespodev/neugram", "source": "startup" }
@@ -2015,10 +2100,16 @@ Errores: `404` [`unknown_session`](#unknown_session) ·
 
 **N** · Igual que `stop` sobre el transcript del subagente, que se lee entero
 porque no hay mensajes humanos que marquen el inicio del turno. No aplica
-`require-save-on-mutation`; sí aplica `require-progress-report`, que solo
-existe acá.
+`require-save-on-mutation`; `require-progress-report` solo existe acá.
 
-Mismo payload que [`POST /hooks/stop`](#post-hooksstop).
+Mismo payload que [`POST /hooks/stop`](#post-hooksstop), con el
+`agent_transcript_path` del `SubagentStop` como `transcript_path` (el
+`transcript_path` del evento es el del padre) y un `agent_id` opcional para el
+log (`specs/hooks.md#hallazgos-del-spike-de-claude-code`).
+
+En el paso 3 aplica solo `require-task-pin-on-mutation` y
+`require-worktree-registered`; `require-progress-report` entra en el paso 4,
+con `progress_write`.
 
 ```json
 {
@@ -2061,7 +2152,7 @@ obligatorio en todo error que el agente pueda resolver por su cuenta.
 | <a id="invalid_parent"></a>`invalid_parent` | 422 | El padre no existe, es la tarea misma o un descendiente suyo, ya está en el nivel 3, o el subárbol de la tarea a mover desbordaría el tope de 3 niveles | Qué regla se violó, el nivel del padre y los candidatos de nivel 1 o 2 |
 | <a id="unknown_product"></a>`unknown_product` | 404 | Nombre de producto inexistente | `neugram product add "<nombre>"` |
 | <a id="product_exists"></a>`product_exists` | 409 | Alta de un producto con un nombre que ya existe | `neugram product ls` |
-| <a id="unknown_session"></a>`unknown_session` | 404 | `session_id` sin fila en `sessions` | Que la sesión la crea el hook `session-start` |
+| <a id="unknown_session"></a>`unknown_session` | 404 | `session_id` sin fila en `sessions`. Nadie la crea al vuelo, tampoco el MCP | Que la sesión la crea el hook `session-start` y que el `session_id` es el de su primera línea; si el hook no corrió, recargar la sesión |
 | <a id="not_found"></a>`not_found` | 404 | `sync_id`, `judgment_id`, campo o gate inexistente | El listado que muestra los válidos |
 | <a id="invalid_request"></a>`invalid_request` | 400 | Payload mal formado, falta un obligatorio, `limit` fuera de rango, `path` relativo, `mem_update` sin ningún campo | El parámetro y qué se esperaba |
 | <a id="invalid_type"></a>`invalid_type` | 422 | `type` de observación fuera de la lista fija | Los nueve tipos válidos |
@@ -2069,7 +2160,7 @@ obligatorio en todo error que el agente pueda resolver por su cuenta.
 | <a id="required_field"></a>`required_field` | 422 | Falta un campo custom con `required=1` | El nombre del campo y su `description` de `schema_fields` |
 | <a id="invalid_field"></a>`invalid_field` | 422 | `where` o un campo custom nombra una columna que no existe en esa tabla | Las columnas disponibles |
 | <a id="invalid_report"></a>`invalid_report` | 422 | `progress_write` con `summary` fuera de 5–10, `next_steps` fuera de 3–6, o `refs.files` sin `path:line` | El campo y su límite |
-| <a id="topic_key_collision"></a>`topic_key_collision` | 409 | El gate `block-topic-key-collision` está activo y el `topic_key` ya existe en ese `(project, scope)` con otro `sync_id` | `mem_update` con el `sync_id` existente, que viene en `details` |
+| <a id="topic_key_collision"></a>`topic_key_collision` | 409 | El gate `block-topic-key-collision` está activo (default `off` en el paso 3, ver `specs/instructions-and-gates.md`) y el `topic_key` ya existe en ese `(project, scope)` con otro `sync_id` | `mem_update` con el `sync_id` existente, que viene en `details` |
 | <a id="field_exists"></a>`field_exists` | 409 | `schema add` de un campo ya definido en esa tabla | `neugram schema ls --table <t>` |
 | <a id="reserved_name"></a>`reserved_name` | 422 | Nombre de campo custom que colisiona con una columna fija o con `id`, `sync_id`, `created_at`, `updated_at`, `deleted_at` | Los nombres reservados |
 | <a id="field_in_use"></a>`field_in_use` | 409 | `schema rm` de una columna con filas de valor no nulo | `--yes --force`, con el conteo de filas en `details` |
