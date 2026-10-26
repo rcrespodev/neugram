@@ -57,12 +57,9 @@ type Override struct {
 
 // Gates is the fixed set, in evaluation order.
 var Gates = []Gate{
-	{GatePinOnMutation, true, true, checkPin,
-		"el turno no cierra si editó archivos y la sesión no tiene pin (task_pin; none cuenta)"},
-	{GateSaveOnMutation, true, false, checkSave,
-		"el turno no cierra si editó archivos y no hubo mem_save, mem_update ni handoff_save"},
-	{GateWorktreeRegistered, true, true, checkWorktree,
-		"el turno no cierra si creó un worktree sin worktree_register de ese path"},
+	{Name: GatePinOnMutation, DefaultEnabled: true, OnSubagentStop: true, Check: checkPin, Phrase: "el turno no cierra si editó archivos y la sesión no tiene pin (task_pin; none cuenta)"},
+	{Name: GateSaveOnMutation, DefaultEnabled: true, Check: checkSave, Phrase: "el turno no cierra si editó archivos y no hubo mem_save, mem_update ni handoff_save"},
+	{Name: GateWorktreeRegistered, DefaultEnabled: true, OnSubagentStop: true, Check: checkWorktree, Phrase: "el turno no cierra si creó un worktree sin worktree_register de ese path"},
 }
 
 // EnabledGates is the set Evaluate runs on a main-agent Stop, with the

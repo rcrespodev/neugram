@@ -233,6 +233,29 @@ func TestInstructionsProduct(t *testing.T) {
 	f.get("/instructions?rendered=maybe", http.StatusBadRequest, &e)
 }
 
+func TestFlowWritesRejectUnknownFields(t *testing.T) {
+	f := newFixture(t)
+	f.flowError("PUT", "/tasks/EPIC-1/status", map[string]string{"session_id": "s1", "status": "done", "statu": "x"}, 422, "invalid_field")
+	f.flowError("POST", "/worktrees", map[string]string{"session_id": "s1", "path": f.alivePath, "repo": "r", "branch": "b", "color": "x"}, 422, "invalid_field")
+	f.flowError("PUT", "/sessions/s1/handoff", map[string]string{"content": "x", "taskid": "EPIC-1"}, 422, "invalid_field")
+}
+
+func TestFlowWritesCapTheBody(t *testing.T) {
+	f := newFixture(t)
+	big := map[string]string{"content": strings.Repeat("x", maxBodyBytes+1)}
+	f.flowError("PUT", "/sessions/s1/handoff", big, 400, "invalid_request")
+}
+
+func TestInstructionsAreStable(t *testing.T) {
+	f := newFixture(t)
+	var a, b instructionsBody
+	f.get("/instructions", http.StatusOK, &a)
+	f.get("/instructions", http.StatusOK, &b)
+	if a.Generated != b.Generated {
+		t.Fatal("two calls rendered different instructions")
+	}
+}
+
 func TestSaveHandoffErrors(t *testing.T) {
 	f := newFixture(t)
 	f.flowError("PUT", "/sessions/nope/handoff", map[string]string{"content": "x"}, 404, "unknown_session")

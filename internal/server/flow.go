@@ -28,24 +28,36 @@ func (s *Server) writerSession(r *http.Request, id string) (store.Session, error
 	return s.st.GetSession(r.Context(), id)
 }
 
+// decodeStrings reads a body of string fields and rejects any key outside allowed.
+func decodeStrings(w http.ResponseWriter, r *http.Request, allowed ...string) (map[string]string, error) {
+	raw, err := decodeFields(w, r, allowed...)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, k := range allowed {
+		if out[k], err = fieldString(raw, k); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 func (s *Server) setTaskStatus(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		SessionID string `json:"session_id"`
-		Status    string `json:"status"`
-	}
-	if err := decode(w, r, &in); err != nil {
+	in, err := decodeStrings(w, r, "session_id", "status")
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if _, err := s.writerSession(r, in.SessionID); err != nil {
+	if _, err := s.writerSession(r, in["session_id"]); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if in.Status == "" {
+	if in["status"] == "" {
 		s.fail(w, r, &store.Error{Code: "required_field", Message: "status is required"})
 		return
 	}
-	res, err := s.st.SetTaskStatus(r.Context(), r.PathValue("key"), in.Status)
+	res, err := s.st.SetTaskStatus(r.Context(), r.PathValue("key"), in["status"])
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -54,35 +66,27 @@ func (s *Server) setTaskStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerWorktree(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		SessionID string `json:"session_id"`
-		Path      string `json:"path"`
-		Repo      string `json:"repo"`
-		Branch    string `json:"branch"`
-		Base      string `json:"base"`
-		Purpose   string `json:"purpose"`
-		TaskID    string `json:"task_id"`
-	}
-	if err := decode(w, r, &in); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	sess, err := s.writerSession(r, in.SessionID)
+	in, err := decodeStrings(w, r, "session_id", "path", "repo", "branch", "base", "purpose", "task_id")
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	for name, v := range map[string]string{"path": in.Path, "repo": in.Repo, "branch": in.Branch} {
-		if v == "" {
+	sess, err := s.writerSession(r, in["session_id"])
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for _, name := range []string{"path", "repo", "branch"} {
+		if in[name] == "" {
 			s.fail(w, r, &store.Error{Code: "required_field", Message: name + " is required"})
 			return
 		}
 	}
-	if !filepath.IsAbs(in.Path) {
-		s.fail(w, r, &store.Error{Code: "invalid_request", Message: "path " + strconv.Quote(in.Path) + " must be absolute"})
+	if !filepath.IsAbs(in["path"]) {
+		s.fail(w, r, &store.Error{Code: "invalid_request", Message: "path " + strconv.Quote(in["path"]) + " must be absolute"})
 		return
 	}
-	task := in.TaskID
+	task := in["task_id"]
 	switch {
 	case task == "" && sess.PinnedAt == "":
 		s.fail(w, r, &store.Error{Code: "no_pin", Message: "the session has no pinned task and the call carries no task_id"})
@@ -92,8 +96,8 @@ func (s *Server) registerWorktree(w http.ResponseWriter, r *http.Request) {
 	case strings.EqualFold(task, store.NoTaskKey):
 		task = ""
 	}
-	res, err := s.st.UpsertWorktree(r.Context(), store.NewWorktree{Path: in.Path, Repo: in.Repo, Branch: in.Branch,
-		Base: in.Base, Purpose: in.Purpose, Task: task, SessionID: sess.ID})
+	res, err := s.st.UpsertWorktree(r.Context(), store.NewWorktree{Path: in["path"], Repo: in["repo"], Branch: in["branch"],
+		Base: in["base"], Purpose: in["purpose"], Task: task, SessionID: sess.ID})
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -106,17 +110,13 @@ func (s *Server) registerWorktree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveHandoff(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Content string `json:"content"`
-		TaskID  string `json:"task_id"`
-		Title   string `json:"title"`
-	}
-	if err := decode(w, r, &in); err != nil {
+	in, err := decodeStrings(w, r, "content", "task_id", "title")
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	res, err := s.st.SaveHandoff(r.Context(), store.Handoff{
-		SessionID: r.PathValue("id"), TaskID: in.TaskID, Title: in.Title, Content: in.Content})
+		SessionID: r.PathValue("id"), TaskID: in["task_id"], Title: in["title"], Content: in["content"]})
 	if err != nil {
 		s.fail(w, r, err)
 		return
