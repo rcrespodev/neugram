@@ -14,9 +14,9 @@ import (
 )
 
 type replayCounts struct {
-	total, noDirectory, missingDirectory, matched                          int
-	worktree, gitChild, configLater, noGitNow, manualSave, childrenChanged int
-	unexplained                                                            []string
+	total, noDirectory, missingDirectory, matched                            int
+	worktree, gitChild, configIgnored, noGitNow, manualSave, childrenChanged int
+	unexplained                                                              []string
 }
 
 // TestReplayImportedSessions compares, session by session, the project that
@@ -69,7 +69,7 @@ func TestReplayImportedSessions(t *testing.T) {
 		case got.DetectedBy == Basename && hasRepoChild(dir, recorded):
 			c.gitChild++
 		case got.DetectedBy == ConfigOverride && withoutConfig(dir) == recorded:
-			c.configLater++
+			c.configIgnored++
 		case recorded == normalize(filepath.Base(dir)) && !isLinkedWorktree(dir):
 			c.childrenChanged++
 		case got.DetectedBy == Basename:
@@ -80,8 +80,8 @@ func TestReplayImportedSessions(t *testing.T) {
 			c.unexplained = append(c.unexplained, fmt.Sprintf("%s %s: detectado %q (%s), registrado %q", id, dir, got.Project, got.DetectedBy, recorded))
 		}
 	}
-	t.Logf("sesiones=%d sin_directory=%d directory_inexistente=%d coinciden=%d worktree_sin_remote=%d git_child=%d config_posterior=%d dir_sin_git_hoy=%d manual_save=%d basename_registrado=%d inexplicadas=%d",
-		c.total, c.noDirectory, c.missingDirectory, c.matched, c.worktree, c.gitChild, c.configLater, c.noGitNow, c.manualSave, c.childrenChanged, len(c.unexplained))
+	t.Logf("sesiones=%d sin_directory=%d directory_inexistente=%d coinciden=%d worktree_sin_remote=%d git_child=%d engram_ignoro_config=%d dir_sin_git_hoy=%d manual_save=%d basename_registrado=%d inexplicadas=%d",
+		c.total, c.noDirectory, c.missingDirectory, c.matched, c.worktree, c.gitChild, c.configIgnored, c.noGitNow, c.manualSave, c.childrenChanged, len(c.unexplained))
 	if len(c.unexplained) > 0 {
 		t.Fatalf("discrepancias sin explicar:\n%s", strings.Join(c.unexplained, "\n"))
 	}

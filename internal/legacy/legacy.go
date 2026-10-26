@@ -161,6 +161,7 @@ func (im *importer) run(ctx context.Context, legacyPath string) error {
 		{"defer foreign keys", im.deferForeignKeys},
 		{"schema", im.ensureSchema},
 		{"memory", im.importMemory},
+		{"project renames", im.renameProjects},
 		{"flow", im.importFlow},
 		{"relations", im.importRelations},
 		{"fts rebuild", im.rebuildFTS},

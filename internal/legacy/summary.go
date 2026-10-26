@@ -46,6 +46,8 @@ type Summary struct {
 	PlainImported  []string
 	DeletedControl []string
 
+	ProjectRenames []ProjectRename
+
 	HashChecked, HashMismatches int
 
 	TimestampsNormalized, TimestampsInvalid int
@@ -108,6 +110,13 @@ func (s *Summary) Write(w io.Writer) {
 	line("tasks→obs", len(s.PlainImported), "registros del project tasks sin forma de control, importados como observación (lista abajo)")
 	if len(s.DeletedControl) > 0 {
 		more("%d registros de control borrados, ignorados: %s", len(s.DeletedControl), list(s.DeletedControl))
+	}
+	for _, r := range s.ProjectRenames {
+		line("project", r.Sessions+r.Observations+r.Prompts, "%s → %s · %d sesiones, %d observaciones, %d prompts · %d colisiones de topic_key",
+			r.From, r.To, r.Sessions, r.Observations, r.Prompts, len(r.Collisions))
+		for _, c := range r.Collisions {
+			more("colisión %s: las dos filas se conservan", c)
+		}
 	}
 	line("hash", s.HashChecked, "normalized_hash recomputado · %d discrepancias", s.HashMismatches)
 	line("timestamps", s.TimestampsNormalized, "normalizados a 2006-01-02T15:04:05Z · %d sin parsear", s.TimestampsInvalid)
