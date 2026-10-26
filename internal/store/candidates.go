@@ -25,6 +25,7 @@ func excludedFromCandidates(typ string, kind sql.NullString) bool {
 }
 
 type Candidate struct {
+	JudgmentID string
 	SyncID     string
 	Title      string
 	Type       string

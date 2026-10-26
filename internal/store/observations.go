@@ -67,7 +67,8 @@ type SaveResult struct {
 
 // AddObservation writes an observation: upsert by topic_key when one is given,
 // otherwise dedupe by normalized_hash within DedupeWindow, otherwise insert.
-// FindCandidates runs in the same transaction over the written row.
+// FindCandidates runs in the same transaction over the written row, and each
+// candidate gets a pending memory_relations row.
 func (s *Store) AddObservation(ctx context.Context, in NewObservation) (SaveResult, error) {
 	if in.Scope == "" {
 		in.Scope = ScopeProject
@@ -93,7 +94,10 @@ func (s *Store) AddObservation(ctx context.Context, in NewObservation) (SaveResu
 			return err
 		}
 		if !res.Deduped {
-			res.Candidates, err = findCandidates(ctx, tx, id)
+			if res.Candidates, err = findCandidates(ctx, tx, id); err != nil {
+				return err
+			}
+			res.Candidates, err = createPendingRelations(ctx, tx, now, in.SessionID, res.Observation.SyncID, res.Candidates)
 		}
 		return err
 	})
