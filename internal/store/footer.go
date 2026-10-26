@@ -36,9 +36,14 @@ func splitFooter(content string) (body, footer string, found bool) {
 }
 
 func footerMatches(footer, key string) bool {
+	got := footerKey(footer)
 	if key == "" {
-		return strings.HasPrefix(strings.ToLower(footer), noTaskLabel)
+		return strings.EqualFold(got, noTaskLabel)
 	}
+	return strings.EqualFold(got, key)
+}
+
+func footerKey(footer string) string {
 	got, _, _ := strings.Cut(footer, " — ")
-	return strings.EqualFold(strings.TrimSpace(got), key)
+	return strings.TrimSpace(got)
 }

@@ -194,6 +194,17 @@ func resolveSaveTask(ctx context.Context, q querier, sess Session, ref string) (
 	return saveTask{id: id, key: card.TaskKey, title: card.Title}, nil
 }
 
+// hasUnresolvableFooter reports a footer that names no task, such as an
+// imported one; an update that leaves the task alone must not erase it.
+func hasUnresolvableFooter(ctx context.Context, q querier, content string) bool {
+	_, footer, found := splitFooter(content)
+	if !found || footerMatches(footer, "") {
+		return false
+	}
+	_, err := lookupTask(ctx, q, footerKey(footer))
+	return isCode(err, ErrUnknownTask)
+}
+
 func noPinError(ctx context.Context, q querier) error {
 	open := []string{}
 	rows, err := q.QueryContext(ctx, `SELECT key, title FROM tasks WHERE status != ? ORDER BY updated_at DESC, key`, StatusDone)
@@ -308,7 +319,10 @@ func (s *Store) UpdateObservation(ctx context.Context, syncID string, p Observat
 			if p.Content != nil {
 				content = *p.Content
 			}
-			out, rewritten := withTaskFooter(content, task.key, task.title)
+			out, rewritten := content, false
+			if p.TaskID != nil || !hasUnresolvableFooter(ctx, tx, content) {
+				out, rewritten = withTaskFooter(content, task.key, task.title)
+			}
 			res.FooterRewritten = rewritten
 			if out != cur.Content {
 				sets = append(sets, "content = ?", "normalized_hash = ?")
