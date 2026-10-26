@@ -153,6 +153,15 @@ Valen para las dos superficies salvo donde se aclara.
   → raíz git → basename). Cuando una tool lo acepta y no se pasa, vale
   `sessions.project` de la sesión: el MCP no conoce el cwd vivo del agente. No es el producto: el producto vive en `products` y
   cuelga de la tarea.
+  La escalera es: `.engram/config.json` (el más cercano, sin salir del repo) →
+  remote `origin` → raíz git → único repo hijo → basename; el nombre va en
+  minúscula. Dos divergencias deliberadas respecto de Engram, medidas contra
+  las 2.565 sesiones importadas: (1) un `git worktree` sin remote da el repo
+  principal, no el basename del worktree (6 sesiones registradas con el
+  nombre del worktree); (2) un cwd padre con **un único** repo hijo da el
+  nombre del hijo y con varios cae al basename del padre (2 sesiones lo
+  necesitaron; el resultado se reporta como `git_root`, no hay un quinto
+  `detected_by`).
 - **Soft delete.** Toda lectura filtra `deleted_at IS NULL`; no hay parámetro
   para incluir borradas.
 - **Jerarquía de tareas.** `tasks.parent_task_id` admite tres niveles: épico,
