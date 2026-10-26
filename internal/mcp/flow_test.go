@@ -134,15 +134,64 @@ func TestTaskKeyWithReservedCharactersIsEscapedInThePath(t *testing.T) {
 	}
 }
 
-func TestFlowToolsWithoutRoutingArgumentAreInvalidRequest(t *testing.T) {
+func TestHandoffSaveWithoutSessionIsInvalidRequest(t *testing.T) {
 	cs := realDaemon(t)
-	for name, args := range map[string]map[string]any{
-		"task_show":    {},
-		"task_status":  {"session_id": "s1", "status": "done"},
-		"handoff_save": {"content": "x"},
-	} {
-		if isErr, out := callJSON(t, cs, name, args); !isErr || errCode(out) != "invalid_request" {
-			t.Errorf("%s: isErr=%v out=%v", name, isErr, out)
-		}
+	isErr, out := callJSON(t, cs, "handoff_save", map[string]any{"content": "x"})
+	if !isErr || errCode(out) != "invalid_request" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskStatusWithoutTaskIdUsesThePin(t *testing.T) {
+	cs := realDaemon(t)
+	pinNew(t, cs, "EPIC-1", nil)
+	isErr, out := callJSON(t, cs, "task_status", map[string]any{"session_id": "s1", "status": "review"})
+	if isErr || out["task_key"] != "EPIC-1" || out["status"] != "review" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskShowWithoutTaskIdUsesThePin(t *testing.T) {
+	cs := realDaemon(t)
+	pinNew(t, cs, "EPIC-1", nil)
+	isErr, out := callJSON(t, cs, "task_show", map[string]any{"session_id": "s1"})
+	if isErr || !strings.Contains(toJSON(out), `"EPIC-1"`) {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskStatusWithoutPinIsNoPin(t *testing.T) {
+	cs := realDaemon(t)
+	isErr, out := callJSON(t, cs, "task_status", map[string]any{"session_id": "s1", "status": "done"})
+	if !isErr || errCode(out) != "no_pin" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskStatusWithNonePinIsNoPinWithAHint(t *testing.T) {
+	cs := realDaemon(t)
+	if isErr, out := callJSON(t, cs, "task_pin", map[string]any{"session_id": "s1", "task_id": "none"}); isErr {
+		t.Fatal(out)
+	}
+	isErr, out := callJSON(t, cs, "task_status", map[string]any{"session_id": "s1", "status": "done"})
+	hint, _ := out["error"].(map[string]any)["hint"].(string)
+	if !isErr || errCode(out) != "no_pin" || !strings.Contains(hint, "no task") {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskShowWithoutTaskIdNorSessionIsInvalidRequest(t *testing.T) {
+	cs := realDaemon(t)
+	isErr, out := callJSON(t, cs, "task_show", nil)
+	if !isErr || errCode(out) != "invalid_request" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
+	}
+}
+
+func TestTaskStatusWithUnknownSessionIsUnknownSession(t *testing.T) {
+	cs := realDaemon(t)
+	isErr, out := callJSON(t, cs, "task_status", map[string]any{"session_id": "ghost", "status": "done"})
+	if !isErr || errCode(out) != "unknown_session" {
+		t.Fatalf("isErr=%v out=%v", isErr, out)
 	}
 }

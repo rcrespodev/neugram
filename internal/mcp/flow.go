@@ -20,7 +20,7 @@ func invalid(msg, hint string) error {
 func taskPath(args map[string]any, suffix string) (string, error) {
 	key, _ := args["task_id"].(string)
 	if key == "" {
-		return "", invalid("task_id is required", "the daemon has no route that resolves the session pin; pass task_id")
+		return "", invalid("task_id is required", "pass task_id")
 	}
 	return "/tasks/" + url.PathEscape(key) + suffix, nil
 }
@@ -93,7 +93,41 @@ func parseTracker(s string) (map[string]string, error) {
 	return map[string]string{"kind": parts[0], "id": parts[1], "url": parts[2]}, nil
 }
 
+// withPinnedTask fills a missing task_id from the session pin.
+func (s *Server) withPinnedTask(args map[string]any) (map[string]any, error) {
+	if key, _ := args["task_id"].(string); key != "" {
+		return args, nil
+	}
+	sid, _ := args["session_id"].(string)
+	if sid == "" {
+		return nil, invalid("task_id or session_id is required", "without session_id there is no implicit pin")
+	}
+	var sess struct {
+		Pin *struct {
+			TaskKey string `json:"task_key"`
+		} `json:"pin"`
+	}
+	if err := s.client.Get("/sessions/"+url.PathEscape(sid), &sess); err != nil {
+		return nil, err
+	}
+	switch {
+	case sess.Pin == nil:
+		return nil, &client.APIError{Code: "no_pin", Message: "the session has no pinned task", Hint: "call task_pin first or pass task_id"}
+	case sess.Pin.TaskKey == "none":
+		return nil, &client.APIError{Code: "no_pin", Message: "the session is pinned to none", Hint: "the session has no task; pass task_id"}
+	}
+	resolved := without(args)
+	resolved["task_id"] = sess.Pin.TaskKey
+	return resolved, nil
+}
+
 func (s *Server) callFlow(name string, args map[string]any, out *json.RawMessage) error {
+	if name == "task_status" || name == "task_show" {
+		var err error
+		if args, err = s.withPinnedTask(args); err != nil {
+			return err
+		}
+	}
 	rt, err := flowRouteOf(name, args)
 	if err != nil {
 		return err
