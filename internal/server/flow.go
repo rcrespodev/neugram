@@ -10,6 +10,7 @@ import (
 )
 
 func (s *Server) routesFlow() {
+	s.routesInstructions()
 	s.mux.HandleFunc("GET /tasks", s.listTasks)
 	s.mux.HandleFunc("GET /tasks/{key}", s.showTask)
 	s.mux.HandleFunc("GET /products", s.listProducts)

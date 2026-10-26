@@ -2,8 +2,10 @@ package server
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -164,6 +166,71 @@ func TestListTasksTreeNestsThreeLevels(t *testing.T) {
 	if len(leaf) != 1 || leaf[0].TaskKey != "EPIC-1-a-x" || leaf[0].Children == nil || len(leaf[0].Children) != 0 {
 		t.Fatalf("leaf %+v", leaf)
 	}
+}
+
+type instructionsBody struct {
+	Product   *string `json:"product"`
+	Source    string  `json:"source"`
+	Generated string  `json:"generated"`
+	Free      string  `json:"free"`
+	Rendered  *string `json:"rendered"`
+}
+
+func TestInstructionsListEnabledGatesAndTypes(t *testing.T) {
+	f := newFixture(t)
+	var got instructionsBody
+	f.get("/instructions", http.StatusOK, &got)
+	for _, want := range []string{"require-task-pin-on-mutation", "require-save-on-mutation", "require-worktree-registered",
+		"session_id", "task_pin", "handoff_save", "worktree_register", "mem_judge",
+		"bugfix", "decision", "architecture", "discovery", "pattern", "config", "preference", "handoff", "session_summary"} {
+		if !strings.Contains(got.Generated, want) {
+			t.Errorf("generated lacks %q", want)
+		}
+	}
+	for _, off := range []string{"block-topic-key-collision", "require-field", "require-progress-report"} {
+		if strings.Contains(got.Generated, off) {
+			t.Errorf("generated lists disabled gate %q", off)
+		}
+	}
+	if got.Source != "global" || got.Free != "" || got.Rendered == nil || *got.Rendered != got.Generated {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestInstructionsHonourGateRows(t *testing.T) {
+	f := newFixture(t)
+	db, err := sql.Open("sqlite", f.srv.opts.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO gates (name, enabled, updated_at) VALUES
+		('require-save-on-mutation', 0, '2026-10-01T10:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	var got instructionsBody
+	f.get("/instructions?rendered=false", http.StatusOK, &got)
+	if strings.Contains(got.Generated, "require-save-on-mutation") || !strings.Contains(got.Generated, "require-worktree-registered") {
+		t.Fatalf("generated = %s", got.Generated)
+	}
+	if got.Rendered != nil {
+		t.Fatal("rendered=false still returned rendered")
+	}
+}
+
+func TestInstructionsProduct(t *testing.T) {
+	f := newFixture(t)
+	var got instructionsBody
+	f.get("/instructions?product=portal", http.StatusOK, &got)
+	if got.Product == nil || *got.Product != "portal" {
+		t.Fatalf("got %+v", got)
+	}
+	var e errorBody
+	f.get("/instructions?product=Nope", http.StatusNotFound, &e)
+	if e.Error.Code != "unknown_product" {
+		t.Fatalf("error %+v", e.Error)
+	}
+	f.get("/instructions?rendered=maybe", http.StatusBadRequest, &e)
 }
 
 func TestSaveHandoffErrors(t *testing.T) {

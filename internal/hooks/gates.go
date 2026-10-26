@@ -45,6 +45,8 @@ type Gate struct {
 	// OnSubagentStop marks the gates evaluated on a subagent transcript.
 	OnSubagentStop bool
 	Check          func(TurnContext) *Violation
+	// Phrase says what the gate blocks, for GET /instructions.
+	Phrase string
 }
 
 // Override is a row of the gates table; it only replaces enabled and params.
@@ -55,9 +57,28 @@ type Override struct {
 
 // Gates is the fixed set, in evaluation order.
 var Gates = []Gate{
-	{GatePinOnMutation, true, true, checkPin},
-	{GateSaveOnMutation, true, false, checkSave},
-	{GateWorktreeRegistered, true, true, checkWorktree},
+	{GatePinOnMutation, true, true, checkPin,
+		"el turno no cierra si editó archivos y la sesión no tiene pin (task_pin; none cuenta)"},
+	{GateSaveOnMutation, true, false, checkSave,
+		"el turno no cierra si editó archivos y no hubo mem_save, mem_update ni handoff_save"},
+	{GateWorktreeRegistered, true, true, checkWorktree,
+		"el turno no cierra si creó un worktree sin worktree_register de ese path"},
+}
+
+// EnabledGates is the set Evaluate runs on a main-agent Stop, with the
+// overrides applied.
+func EnabledGates(overrides map[string]Override) []Gate {
+	var out []Gate
+	for _, g := range Gates {
+		enabled := g.DefaultEnabled
+		if o, ok := overrides[g.Name]; ok {
+			enabled = o.Enabled
+		}
+		if enabled {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 type Decision struct {
