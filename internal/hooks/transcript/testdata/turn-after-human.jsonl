@@ -1,0 +1,8 @@
+{"type": "mode", "mode": "normal"}
+{"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "primer pedido"}, "origin": {"kind": "human"}}
+{"type": "assistant", "cwd": "/home/r/proj", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": "/home/r/proj/src/a.go"}}]}}
+{"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}}
+{"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "segundo pedido"}, "origin": {"kind": "human"}}
+{"type": "assistant", "cwd": "/home/r/proj", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t2", "name": "Edit", "input": {"file_path": "/home/r/proj/src/b.go"}}]}}
+{"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}]}}
+{"type": "system", "subtype": "turn_duration"}
