@@ -44,7 +44,9 @@ type Observation struct {
 	UpdatedAt      string
 }
 
-// NewObservation is the input of AddObservation. Empty strings are NULL.
+// NewObservation is the input of AddObservation. TaskID is a task key or id,
+// "none" for no task, or empty to use the session's pin; Project defaults to
+// the session's.
 type NewObservation struct {
 	SessionID string
 	Type      string
@@ -59,10 +61,12 @@ type NewObservation struct {
 }
 
 type SaveResult struct {
-	Observation Observation
-	Deduped     bool
-	Upserted    bool
-	Candidates  []Candidate
+	Observation     Observation
+	Deduped         bool
+	Upserted        bool
+	Candidates      []Candidate
+	TaskKey         string
+	FooterRewritten bool
 }
 
 // AddObservation writes an observation: upsert by topic_key when one is given,
@@ -76,14 +80,25 @@ func (s *Store) AddObservation(ctx context.Context, in NewObservation) (SaveResu
 	if err := validateObservation(in.Type, in.Scope, in.Kind); err != nil {
 		return SaveResult{}, err
 	}
-	if in.SessionID == "" || in.Title == "" || in.Content == "" || in.Project == "" {
-		return SaveResult{}, errorf(ErrInvalidRequest, "session_id, title, content and project are required")
+	if in.SessionID == "" || in.Title == "" || in.Content == "" {
+		return SaveResult{}, errorf(ErrInvalidRequest, "session_id, title and content are required")
 	}
 	var res SaveResult
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		if _, err := getSession(ctx, tx, in.SessionID); err != nil {
+		sess, err := getSession(ctx, tx, in.SessionID)
+		if err != nil {
 			return err
 		}
+		if in.Project == "" {
+			in.Project = sess.Project
+		}
+		task, err := resolveSaveTask(ctx, tx, sess, in.TaskID)
+		if err != nil {
+			return err
+		}
+		in.TaskID = task.id
+		res.TaskKey = task.key
+		in.Content, res.FooterRewritten = withTaskFooter(in.Content, task.key, task.title)
 		now := s.timestamp()
 		hash := NormalizedHash(in.Content)
 		id, err := s.writeObservation(ctx, tx, in, hash, now, &res)
@@ -154,6 +169,49 @@ func (s *Store) writeObservation(ctx context.Context, tx *sql.Tx, in NewObservat
 	return r.LastInsertId()
 }
 
+type saveTask struct{ id, key, title string }
+
+// resolveSaveTask applies the task rules of mem_save: the explicit argument,
+// else the session's pin; no argument and no pin is no_pin. A none pin or
+// argument yields the zero saveTask.
+func resolveSaveTask(ctx context.Context, q querier, sess Session, ref string) (saveTask, error) {
+	switch {
+	case ref == "" && sess.PinnedAt == "":
+		return saveTask{}, noPinError(ctx, q)
+	case strings.EqualFold(ref, NoTaskKey), ref == "" && sess.TaskID == "":
+		return saveTask{}, nil
+	case ref == "":
+		ref = sess.TaskID
+	}
+	id, err := lookupTask(ctx, q, ref)
+	if err != nil {
+		return saveTask{}, err
+	}
+	card, err := taskCard(ctx, q, id)
+	if err != nil {
+		return saveTask{}, err
+	}
+	return saveTask{id: id, key: card.TaskKey, title: card.Title}, nil
+}
+
+func noPinError(ctx context.Context, q querier) error {
+	open := []string{}
+	rows, err := q.QueryContext(ctx, `SELECT key, title FROM tasks WHERE status != ? ORDER BY updated_at DESC, key`, StatusDone)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key, title string
+		if err := rows.Scan(&key, &title); err != nil {
+			return err
+		}
+		open = append(open, key+" — "+title)
+	}
+	return &Error{Code: ErrNoPin.Code, Message: "the session has no pinned task and the call carries no task_id",
+		Hint: `task_pin {"task_id": "<key>"} or task_pin {"task_id": "none"}`, Details: map[string]any{"open_tasks": open}}
+}
+
 // ObservationPatch is the input of UpdateObservation. A nil field is left
 // untouched; a pointer to "" clears a nullable column.
 type ObservationPatch struct {
@@ -166,76 +224,113 @@ type ObservationPatch struct {
 	Kind     *string
 }
 
-// UpdateObservation applies the patch, bumps revision_count and returns the
-// row together with the names of the columns it changed.
-func (s *Store) UpdateObservation(ctx context.Context, syncID string, p ObservationPatch) (Observation, []string, error) {
+// UpdateResult is what UpdateObservation returns: the row, the names of the
+// columns it changed and whether an existing `**Task**` footer was corrected.
+type UpdateResult struct {
+	Observation     Observation
+	Changed         []string
+	TaskKey         string
+	FooterRewritten bool
+}
+
+// UpdateObservation applies the patch and bumps revision_count. Changing the
+// task or the content re-applies the `**Task**` footer, and a footer change
+// shows up as "content" in Changed even when the patch did not send content.
+func (s *Store) UpdateObservation(ctx context.Context, syncID string, p ObservationPatch) (UpdateResult, error) {
 	var sets []string
 	var args []any
 	var changed []string
 	set := func(col string, v any) {
 		sets = append(sets, col+" = ?")
 		args = append(args, v)
-		changed = append(changed, col)
+		if !slices.Contains(changed, col) {
+			changed = append(changed, col)
+		}
 	}
 	if p.Title != nil {
 		if *p.Title == "" {
-			return Observation{}, nil, errorf(ErrInvalidRequest, "title cannot be empty")
+			return UpdateResult{}, errorf(ErrInvalidRequest, "title cannot be empty")
 		}
 		set("title", *p.Title)
 	}
-	if p.Content != nil {
-		if *p.Content == "" {
-			return Observation{}, nil, errorf(ErrInvalidRequest, "content cannot be empty")
-		}
-		set("content", *p.Content)
-		sets = append(sets, "normalized_hash = ?")
-		args = append(args, NormalizedHash(*p.Content))
+	if p.Content != nil && *p.Content == "" {
+		return UpdateResult{}, errorf(ErrInvalidRequest, "content cannot be empty")
 	}
 	if p.Type != nil {
 		if !slices.Contains(ObservationTypes, *p.Type) {
-			return Observation{}, nil, errorf(ErrInvalidType, "type %q is not one of %s", *p.Type, strings.Join(ObservationTypes, ", "))
+			return UpdateResult{}, errorf(ErrInvalidType, "type %q is not one of %s", *p.Type, strings.Join(ObservationTypes, ", "))
 		}
 		set("type", *p.Type)
 	}
 	if p.TopicKey != nil {
 		set("topic_key", nullable(*p.TopicKey))
 	}
-	if p.TaskID != nil {
-		set("task_id", nullable(*p.TaskID))
-	}
 	if p.Scope != nil {
 		if *p.Scope != ScopeProject && *p.Scope != ScopePersonal {
-			return Observation{}, nil, errorf(ErrInvalidEnum, "scope must be project or personal")
+			return UpdateResult{}, errorf(ErrInvalidEnum, "scope must be project or personal")
 		}
 		set("scope", *p.Scope)
 	}
 	if p.Kind != nil {
 		if *p.Kind != "" && *p.Kind != KindHandoff {
-			return Observation{}, nil, errorf(ErrInvalidEnum, "kind must be handoff or null")
+			return UpdateResult{}, errorf(ErrInvalidEnum, "kind must be handoff or null")
 		}
 		set("kind", nullable(*p.Kind))
 	}
-	if len(sets) == 0 {
-		return Observation{}, nil, errorf(ErrInvalidRequest, "nothing to update besides sync_id")
+	if len(sets) == 0 && p.Content == nil && p.TaskID == nil {
+		return UpdateResult{}, errorf(ErrInvalidRequest, "nothing to update besides sync_id")
 	}
-	var obs Observation
+	var res UpdateResult
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		query := `UPDATE observations SET ` + strings.Join(sets, ", ") +
-			`, revision_count = revision_count + 1, updated_at = ? WHERE sync_id = ? AND deleted_at IS NULL`
-		res, err := tx.ExecContext(ctx, query, append(args, s.timestamp(), syncID)...)
+		cur, err := getObservation(ctx, tx, `o.sync_id = ?`, syncID)
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errorf(ErrNotFound, "observation %q does not exist", syncID)
+		sets, args := sets, args
+		if p.Content != nil || p.TaskID != nil {
+			ref := cur.TaskID
+			if p.TaskID != nil {
+				ref = *p.TaskID
+			}
+			if ref == "" {
+				ref = NoTaskKey
+			}
+			task, err := resolveSaveTask(ctx, tx, Session{PinnedAt: "-"}, ref)
+			if err != nil {
+				return err
+			}
+			if p.TaskID != nil && task.id != cur.TaskID {
+				sets, args = append(sets, "task_id = ?"), append(args, nullable(task.id))
+				changed = append(changed, "task_id")
+			}
+			res.TaskKey = task.key
+			content := cur.Content
+			if p.Content != nil {
+				content = *p.Content
+			}
+			out, rewritten := withTaskFooter(content, task.key, task.title)
+			res.FooterRewritten = rewritten
+			if out != cur.Content {
+				sets = append(sets, "content = ?", "normalized_hash = ?")
+				args = append(args, out, NormalizedHash(out))
+				if !slices.Contains(changed, "content") {
+					changed = append(changed, "content")
+				}
+			}
 		}
-		obs, err = getObservation(ctx, tx, `o.sync_id = ?`, syncID)
+		query := `UPDATE observations SET ` + strings.Join(sets, ", ") +
+			`, revision_count = revision_count + 1, updated_at = ? WHERE sync_id = ? AND deleted_at IS NULL`
+		if _, err := tx.ExecContext(ctx, query, append(args, s.timestamp(), syncID)...); err != nil {
+			return err
+		}
+		res.Observation, err = getObservation(ctx, tx, `o.sync_id = ?`, syncID)
 		return err
 	})
+	res.Changed = changed
 	if err != nil {
-		return Observation{}, nil, err
+		return UpdateResult{}, err
 	}
-	return obs, changed, nil
+	return res, nil
 }
 
 // DeleteObservation is the soft delete: it stamps deleted_at, which hides the

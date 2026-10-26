@@ -40,6 +40,9 @@ func save(t *testing.T, s *Store, in NewObservation) SaveResult {
 	if in.Project == "" {
 		in.Project = "neugram"
 	}
+	if in.TaskID == "" {
+		in.TaskID = NoTaskKey
+	}
 	if in.Type == "" {
 		in.Type = "decision"
 	}
@@ -203,7 +206,7 @@ func TestFTSStaysConsistentAcrossInsertUpdateDelete(t *testing.T) {
 	assertFTSIntegrity(t, s)
 
 	content := "rewritten body with zebra"
-	if _, _, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{Content: &content}); err != nil {
+	if _, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{Content: &content}); err != nil {
 		t.Fatal(err)
 	}
 	assertFTSIntegrity(t, s)
@@ -233,7 +236,7 @@ func TestAddObservationInsertsWithPublicSyncID(t *testing.T) {
 	if o.Scope != ScopeProject || o.RevisionCount != 1 || o.DuplicateCount != 1 || o.CreatedAt != "2026-10-19T12:00:00Z" {
 		t.Fatalf("unexpected row %+v", o)
 	}
-	if o.NormalizedHash != NormalizedHash("Body") || res.Deduped || res.Upserted {
+	if o.NormalizedHash != NormalizedHash(o.Content) || res.Deduped || res.Upserted {
 		t.Fatalf("unexpected result %+v", res)
 	}
 }
@@ -314,7 +317,7 @@ func TestTopicKeyUpsertBumpsRevisionCount(t *testing.T) {
 		t.Fatalf("expected upsert onto %s, got %+v", first.Observation.SyncID, second)
 	}
 	o := second.Observation
-	if o.RevisionCount != 2 || o.Content != "two" || o.Title != "Auth model v2" || o.UpdatedAt != "2026-10-19T13:00:00Z" {
+	if o.RevisionCount != 2 || o.Content != "two\n\n**Task**: ninguna" || o.Title != "Auth model v2" || o.UpdatedAt != "2026-10-19T13:00:00Z" {
 		t.Fatalf("unexpected row %+v", o)
 	}
 	personal := save(t, s, NewObservation{Title: "Auth model", Content: "three", TopicKey: "task/X/auth", Scope: ScopePersonal})
@@ -350,24 +353,25 @@ func TestUpdateObservation(t *testing.T) {
 	ctx := context.Background()
 	res := save(t, s, NewObservation{Title: "t", Content: "c", TopicKey: "k"})
 	content, clear := "New Content", ""
-	o, changed, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{Content: &content, TopicKey: &clear})
+	r, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{Content: &content, TopicKey: &clear})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o.RevisionCount != 2 || o.TopicKey != "" || o.NormalizedHash != NormalizedHash(content) {
+	o, changed := r.Observation, r.Changed
+	if o.RevisionCount != 2 || o.TopicKey != "" || o.NormalizedHash != NormalizedHash(o.Content) {
 		t.Fatalf("unexpected row %+v", o)
 	}
-	if len(changed) != 2 || changed[0] != "content" || changed[1] != "topic_key" {
+	if len(changed) != 2 || changed[0] != "topic_key" || changed[1] != "content" {
 		t.Fatalf("changed=%v", changed)
 	}
-	if _, _, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{}); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{}); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("empty patch: %v", err)
 	}
 	bad := "nope"
-	if _, _, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{Type: &bad}); !errors.Is(err, ErrInvalidType) {
+	if _, err := s.UpdateObservation(ctx, res.Observation.SyncID, ObservationPatch{Type: &bad}); !errors.Is(err, ErrInvalidType) {
 		t.Fatalf("bad type: %v", err)
 	}
-	if _, _, err := s.UpdateObservation(ctx, "obs-missing", ObservationPatch{Content: &content}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.UpdateObservation(ctx, "obs-missing", ObservationPatch{Content: &content}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
 }
@@ -388,7 +392,7 @@ func TestSoftDeleteHidesFromEveryRead(t *testing.T) {
 		t.Fatalf("list after delete: %d", len(got))
 	}
 	content := "x"
-	if _, _, err := s.UpdateObservation(ctx, id, ObservationPatch{Content: &content}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.UpdateObservation(ctx, id, ObservationPatch{Content: &content}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("update after delete: %v", err)
 	}
 	if err := s.DeleteObservation(ctx, id); !errors.Is(err, ErrNotFound) {

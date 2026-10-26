@@ -9,6 +9,8 @@ import (
 type Error struct {
 	Code    string
 	Message string
+	Hint    string
+	Details map[string]any
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }

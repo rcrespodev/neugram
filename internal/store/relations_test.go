@@ -87,7 +87,7 @@ func TestRelationsRollBackWithObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.AddObservation(context.Background(), NewObservation{
-		SessionID: "sess-1", Project: "neugram", Type: "decision", Title: "alpha beta", Content: "four",
+		SessionID: "sess-1", Project: "neugram", Type: "decision", Title: "alpha beta", Content: "four", TaskID: NoTaskKey,
 	}); err == nil {
 		t.Fatal("want the save to fail")
 	}

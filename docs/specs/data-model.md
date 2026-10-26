@@ -168,6 +168,14 @@ existente en vez de insertar. Una observación con `topic_key` no pasa nunca por
 el dedupe: va al upsert por `(topic_key, project, scope)`, que incrementa
 `revision_count`, y si no hay fila que pisar se inserta.
 
+El pie `**Task**` es parte del `content`, y el hash se calcula **después** de
+que el daemon lo agrega o lo corrige: el `normalized_hash` es el del `content`
+tal como queda guardado. Así un mismo save repetido deduplica, y también lo hace
+el mismo cuerpo enviado sin pie, con el pie correcto o con el de otra tarea, porque
+los tres terminan en el mismo contenido. El mismo cuerpo bajo dos tareas distintas
+no deduplica: el pie los separa. `mem_update` recalcula el hash sobre el
+`content` ya con el pie.
+
 `sync_id` conserva el nombre que le puso el cloud que ya no existe. No se
 renombra: es la clave de unión de los 6.805 registros importados, y la
 referencia de `memory_relations` y de los handoffs. `id` se conserva porque
