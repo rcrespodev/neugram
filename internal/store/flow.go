@@ -249,7 +249,7 @@ func (s *Store) GetTask(ctx context.Context, ref string, q TaskShowQuery) (TaskD
 	if d.Sessions, err = s.taskSessions(ctx, id); err != nil {
 		return TaskDetail{}, err
 	}
-	if d.Worktrees, err = s.listWorktrees(ctx, "w.task_id = ?", []any{id}); err != nil {
+	if d.Worktrees, err = listWorktrees(ctx, s.db, "w.task_id = ?", []any{id}); err != nil {
 		return TaskDetail{}, err
 	}
 	if d.Handoffs, err = s.taskHandoffs(ctx, id); err != nil {
@@ -427,7 +427,7 @@ func (s *Store) ListWorktrees(ctx context.Context, q WorktreeQuery) ([]Worktree,
 	if len(where) > 0 {
 		cond = strings.Join(where, " AND ")
 	}
-	all, err := s.listWorktrees(ctx, cond, args)
+	all, err := listWorktrees(ctx, s.db, cond, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -440,8 +440,8 @@ func (s *Store) ListWorktrees(ctx context.Context, q WorktreeQuery) ([]Worktree,
 	return all[lo:hi], total, nil
 }
 
-func (s *Store) listWorktrees(ctx context.Context, cond string, args []any) ([]Worktree, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT w.id, w.path, w.repo, w.branch, w.base, w.purpose, t.key,
+func listWorktrees(ctx context.Context, q querier, cond string, args []any) ([]Worktree, error) {
+	rows, err := q.QueryContext(ctx, `SELECT w.id, w.path, w.repo, w.branch, w.base, w.purpose, t.key,
 		  w.created_by_session, w.created_at
 		FROM worktrees w LEFT JOIN tasks t ON t.id = w.task_id
 		WHERE `+cond+` ORDER BY w.created_at DESC, w.path`, args...)
