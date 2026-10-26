@@ -102,6 +102,7 @@ func (s *Server) withPinnedTask(args map[string]any) (map[string]any, error) {
 	if sid == "" {
 		return nil, invalid("task_id or session_id is required", "without session_id there is no implicit pin")
 	}
+	// The pin can change between this read and the call that follows; the daemon cannot make the pair atomic.
 	var sess struct {
 		Pin *struct {
 			TaskKey string `json:"task_key"`
