@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rcrespodev/neugram/internal/client"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -59,9 +60,9 @@ func startServer(t *testing.T, extraTasks int) {
 
 func noStart(t *testing.T) {
 	t.Helper()
-	prev := startDaemon
-	startDaemon = func(string) error { return errors.New("start disabled in tests") }
-	t.Cleanup(func() { startDaemon = prev })
+	prev := client.StartDaemon
+	client.StartDaemon = func(string) error { return errors.New("start disabled in tests") }
+	t.Cleanup(func() { client.StartDaemon = prev })
 }
 
 func run(args ...string) (int, string, string) {
@@ -228,13 +229,13 @@ func TestDaemonOfAnotherVersionIsReplaced(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	t.Setenv("NEUGRAM_ADDR", strings.TrimPrefix(srv.URL, "http://"))
-	prev := startDaemon
-	startDaemon = func(string) error {
+	prev := client.StartDaemon
+	client.StartDaemon = func(string) error {
 		starts.Add(1)
 		version.Store(buildVersion())
 		return nil
 	}
-	t.Cleanup(func() { startDaemon = prev })
+	t.Cleanup(func() { client.StartDaemon = prev })
 
 	code, _, errOut := run("product", "ls")
 	if code != 0 {
@@ -269,12 +270,12 @@ func TestDaemonReplacedByAnotherClientBeforeThePollCounts(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	t.Setenv("NEUGRAM_ADDR", strings.TrimPrefix(srv.URL, "http://"))
-	prev := startDaemon
-	startDaemon = func(string) error {
+	prev := client.StartDaemon
+	client.StartDaemon = func(string) error {
 		starts.Add(1)
 		return nil
 	}
-	t.Cleanup(func() { startDaemon = prev })
+	t.Cleanup(func() { client.StartDaemon = prev })
 
 	if code, _, errOut := run("product", "ls"); code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut)

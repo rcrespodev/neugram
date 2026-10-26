@@ -5,10 +5,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/rcrespodev/neugram/internal/client"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/rcrespodev/neugram/internal/doctor"
 	"github.com/rcrespodev/neugram/internal/legacy"
@@ -82,13 +80,4 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func expandHome(p string) (string, error) {
-	if p != "~" && !strings.HasPrefix(p, "~/") {
-		return p, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, strings.TrimPrefix(p, "~")), nil
-}
+func expandHome(p string) (string, error) { return client.ExpandHome(p) }

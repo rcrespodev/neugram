@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/rcrespodev/neugram/internal/client"
 	"io"
 	"net/url"
 	"strconv"
@@ -46,7 +47,7 @@ func runProduct(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var products []store.Product
-	err := withDaemon(func(c *client) error {
+	err := withDaemon(func(c *client.Client) error {
 		var err error
 		products, err = fetchAll[store.Product](c, "/products", url.Values{}, "products")
 		return err
@@ -88,7 +89,7 @@ func runTaskLs(args []string, stdout, stderr io.Writer) int {
 		q.Set("include_done", "true")
 	}
 	var tasks []store.TaskSummary
-	err := withDaemon(func(c *client) error {
+	err := withDaemon(func(c *client.Client) error {
 		var err error
 		tasks, err = fetchAll[store.TaskSummary](c, "/tasks", q, "tasks")
 		return err
@@ -117,8 +118,8 @@ func runTaskShow(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var d store.TaskDetail
-	err = withDaemon(func(c *client) error {
-		return c.get("/tasks/"+url.PathEscape(pos[0]), &d)
+	err = withDaemon(func(c *client.Client) error {
+		return c.Get("/tasks/"+url.PathEscape(pos[0]), &d)
 	})
 	if err != nil {
 		return fail(stderr, err)
@@ -136,7 +137,7 @@ func runTaskWt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var wts []store.Worktree
-	err = withDaemon(func(c *client) error {
+	err = withDaemon(func(c *client.Client) error {
 		var err error
 		wts, err = fetchAll[store.Worktree](c, "/worktrees", url.Values{"task_id": {pos[0]}}, "worktrees")
 		return err
@@ -245,13 +246,13 @@ func writeWorktrees(w io.Writer, wts []store.Worktree, indent string) {
 }
 
 // fetchAll pages through a listing endpoint until it has every row.
-func fetchAll[T any](c *client, path string, q url.Values, field string) ([]T, error) {
+func fetchAll[T any](c *client.Client, path string, q url.Values, field string) ([]T, error) {
 	out := []T{}
 	for {
 		q.Set("limit", strconv.Itoa(pageSize))
 		q.Set("offset", strconv.Itoa(len(out)))
 		var page map[string]json.RawMessage
-		if err := c.get(path+"?"+q.Encode(), &page); err != nil {
+		if err := c.Get(path+"?"+q.Encode(), &page); err != nil {
 			return nil, err
 		}
 		var rows []T
@@ -269,9 +270,9 @@ func fetchAll[T any](c *client, path string, q url.Values, field string) ([]T, e
 	}
 }
 
-func withDaemon(fn func(*client) error) error {
+func withDaemon(fn func(*client.Client) error) error {
 	c := newClient()
-	if err := c.ensureDaemon(); err != nil {
+	if err := c.EnsureDaemon(); err != nil {
 		return err
 	}
 	return fn(c)
@@ -299,7 +300,7 @@ func parseArgs(fs *flag.FlagSet, args []string, positional int) ([]string, error
 }
 
 func fail(stderr io.Writer, err error) int {
-	var ae *apiError
+	var ae *client.APIError
 	if errors.As(err, &ae) {
 		fmt.Fprintf(stderr, "neugram: %s: %s\n", ae.Code, ae.Error())
 		return 1
