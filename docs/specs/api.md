@@ -161,7 +161,12 @@ Valen para las dos superficies salvo donde se aclara.
   nombre del worktree); (2) un cwd padre con **un único** repo hijo da el
   nombre del hijo y con varios cae al basename del padre (2 sesiones lo
   necesitaron; el resultado se reporta como `git_root`, no hay un quinto
-  `detected_by`).
+  `detected_by`); (3) el `.engram/config.json` gana siempre, aunque Engram lo
+  ignorara: en 6 directorios, con `project_name` presente antes de la sesión
+  en 5 de ellos, Engram registró el basename. Para `gh-microservices-v2` (no
+  es repo git) el import migra las 321 sesiones y 335 observaciones a
+  `gh-microservices`, para que el historial y las sesiones nuevas compartan
+  project (`specs/import-legacy.md`, Renombre de projects).
 - **Soft delete.** Toda lectura filtra `deleted_at IS NULL`; no hay parámetro
   para incluir borradas.
 - **Jerarquía de tareas.** `tasks.parent_task_id` admite tres niveles: épico,

@@ -69,6 +69,40 @@ El FTS no se copia: se reconstruye con `INSERT INTO observations_fts(observation
 VALUES('rebuild')` al final, y lo mismo `prompts_fts`. Es la única forma de que
 el índice quede consistente con los `rowid` copiados.
 
+### Renombre de projects
+
+Engram ignoró `.engram/config.json` en `~/tripulse/gh-microservices-v2` (no es
+repo git; el config con `project_name: gh-microservices` existe desde el
+2026-09-09) y registró esas sesiones como `gh-microservices-v2`. neugram sí
+respeta el config (`internal/project`), así que sin migrar, el historial y las
+sesiones nuevas quedarían en projects distintos. Decisión del usuario del
+2026-10-26: el import renombra.
+
+La regla es datos, no código: `projectRenames` en `internal/legacy/rename.go`
+(hoy `gh-microservices-v2` → `gh-microservices`). Corre después de copiar la
+memoria y antes del flujo, y actualiza `project` en `sessions`, `observations` y
+`user_prompts`; los handoffs, que toman el project de su sesión, nacen ya con el
+nombre nuevo. Reimportar da lo mismo: la copia restituye el project legacy y el
+renombre lo vuelve a aplicar.
+
+Procedencia: las seis verificaciones corren antes y sobre la base legacy, que no
+cambia; `normalized_hash` es sha256 del content y no depende de `project`, así
+que sigue valiendo. La base legacy conserva el nombre viejo, y es la evidencia
+de que el renombre es del import y no del dato original.
+
+`topic_key` no tiene índice único por `(topic_key, project, scope)`: una
+colisión no rompe nada y no se pisa ninguna fila. Se detecta por pares vivos
+(`deleted_at IS NULL`) presentes en los dos projects, se conservan las dos filas
+y se listan en el resumen; un `mem_save` posterior sobre esa key hace upsert de
+la más nueva.
+
+Medido el 2026-10-26 sobre una copia nueva de la base legacy (2.567 sesiones,
+9.561 hashes): 321 sesiones, 335 observaciones y 0 prompts movidos (los prompts
+de esas sesiones ya traían `gh-microservices`), 0 colisiones de `topic_key`.
+Las 335 observaciones están vivas. `neugram doctor` sin fallas, 9.561/9.561
+hashes y el resumen imprime `project  656  gh-microservices-v2 →
+gh-microservices …`.
+
 ## Fase 2 — flujo
 
 Los 331 registros del project `tasks` no entran como observaciones: su
