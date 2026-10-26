@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -82,6 +83,8 @@ type APIError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Hint    string `json:"hint"`
+	// Details depends on Code; callers decode it themselves.
+	Details json.RawMessage `json:"details,omitempty"`
 }
 
 func (e *APIError) Error() string {
@@ -101,21 +104,49 @@ func (c *Client) logf(format string, args ...any) {
 
 // Get decodes the JSON response of GET path into out.
 func (c *Client) Get(path string, out any) error {
-	resp, err := c.HTTP.Get(c.url(path))
+	return c.do(http.MethodGet, path, nil, out)
+}
+
+// Post, Patch and Put send in as a JSON body and decode the reply into out;
+// out may be nil.
+func (c *Client) Post(path string, in, out any) error  { return c.do(http.MethodPost, path, in, out) }
+func (c *Client) Patch(path string, in, out any) error { return c.do(http.MethodPatch, path, in, out) }
+func (c *Client) Put(path string, in, out any) error   { return c.do(http.MethodPut, path, in, out) }
+
+func (c *Client) do(method, path string, in, out any) error {
+	var body io.Reader
+	if in != nil {
+		raw, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest(method, c.url(path), body)
+	if err != nil {
+		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode >= 400 {
 		var env struct{ Error APIError }
-		if json.Unmarshal(body, &env) != nil || env.Error.Code == "" {
-			return fmt.Errorf("GET %s: HTTP %d", path, resp.StatusCode)
+		if json.Unmarshal(data, &env) != nil || env.Error.Code == "" {
+			return fmt.Errorf("%s %s: HTTP %d", method, path, resp.StatusCode)
 		}
 		return &env.Error
 	}
-	return json.Unmarshal(body, out)
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(data, out)
 }
