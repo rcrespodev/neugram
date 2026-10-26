@@ -235,22 +235,9 @@ func (s *Store) GetTask(ctx context.Context, ref string, q TaskShowQuery) (TaskD
 		return TaskDetail{}, err
 	}
 	var d TaskDetail
-	c := &d.Task
-	var product, parent, grandparent, kind, trackerID, trackerURL, notes sql.NullString
-	err = s.db.QueryRowContext(ctx, `SELECT t.id, t.key, t.title, t.status, pr.name, p.key, g.key,
-		  t.tracker_kind, t.tracker_id, t.tracker_url, t.notes, t.created_at, t.updated_at
-		FROM tasks t
-		LEFT JOIN products pr ON pr.id = t.product_id
-		LEFT JOIN tasks p ON p.id = t.parent_task_id
-		LEFT JOIN tasks g ON g.id = p.parent_task_id
-		WHERE t.id = ?`, id).Scan(&c.TaskID, &c.TaskKey, &c.Title, &c.Status, &product, &parent, &grandparent,
-		&kind, &trackerID, &trackerURL, &notes, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
+	if d.Task, err = taskCard(ctx, s.db, id); err != nil {
 		return TaskDetail{}, err
 	}
-	c.Product, c.ParentKey, c.Notes = ptr(product), ptr(parent), ptr(notes)
-	c.AncestorKeys = ancestors(grandparent, parent)
-	c.Tracker = tracker(kind, trackerID, trackerURL)
 
 	if q.IncludeSubtasks {
 		children, err := s.subtree(ctx, id)
@@ -527,11 +514,15 @@ func (s *Store) ListProducts(ctx context.Context, q ProductQuery) ([]Product, in
 
 // resolveTask accepts the key, case-insensitive, or the ULID of tasks.id.
 func (s *Store) resolveTask(ctx context.Context, ref string) (string, error) {
+	return lookupTask(ctx, s.db, ref)
+}
+
+func lookupTask(ctx context.Context, q querier, ref string) (string, error) {
 	if strings.EqualFold(ref, NoTaskKey) {
 		return "", errorf(ErrUnknownTask, "%q is the explicit no-task pin, not a task", ref)
 	}
 	var id string
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM tasks WHERE key = ? OR id = ?`, ref, ref).Scan(&id)
+	err := q.QueryRowContext(ctx, `SELECT id FROM tasks WHERE key = ? OR id = ?`, ref, ref).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "", errorf(ErrUnknownTask, "task %q does not exist", ref)
 	}
@@ -585,4 +576,24 @@ func splitLines(ns sql.NullString) []string {
 		return nil
 	}
 	return strings.Split(ns.String, "\n")
+}
+
+func taskCard(ctx context.Context, q querier, id string) (TaskCard, error) {
+	var c TaskCard
+	var product, parent, grandparent, kind, trackerID, trackerURL, notes sql.NullString
+	err := q.QueryRowContext(ctx, `SELECT t.id, t.key, t.title, t.status, pr.name, p.key, g.key,
+		  t.tracker_kind, t.tracker_id, t.tracker_url, t.notes, t.created_at, t.updated_at
+		FROM tasks t
+		LEFT JOIN products pr ON pr.id = t.product_id
+		LEFT JOIN tasks p ON p.id = t.parent_task_id
+		LEFT JOIN tasks g ON g.id = p.parent_task_id
+		WHERE t.id = ?`, id).Scan(&c.TaskID, &c.TaskKey, &c.Title, &c.Status, &product, &parent, &grandparent,
+		&kind, &trackerID, &trackerURL, &notes, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return TaskCard{}, err
+	}
+	c.Product, c.ParentKey, c.Notes = ptr(product), ptr(parent), ptr(notes)
+	c.AncestorKeys = ancestors(grandparent, parent)
+	c.Tracker = tracker(kind, trackerID, trackerURL)
+	return c, nil
 }

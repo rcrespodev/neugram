@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // Error carries one of the stable codes of the error catalog in docs/specs/api.md.
 type Error struct {
@@ -22,7 +25,13 @@ var (
 	ErrInvalidType    = &Error{Code: "invalid_type"}
 	ErrInvalidEnum    = &Error{Code: "invalid_enum"}
 	ErrUnknownSession = &Error{Code: "unknown_session"}
+	ErrNoPin          = &Error{Code: "no_pin"}
+	ErrTaskExists     = &Error{Code: "task_exists"}
+	ErrInvalidParent  = &Error{Code: "invalid_parent"}
+	ErrUnknownProduct = &Error{Code: "unknown_product"}
 )
+
+func isCode(err error, kind *Error) bool { return errors.Is(err, kind) }
 
 func errorf(kind *Error, format string, args ...any) error {
 	return &Error{Code: kind.Code, Message: fmt.Sprintf(format, args...)}
