@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -10,6 +11,8 @@ import (
 
 func (s *Server) routesMemory() {
 	s.mux.HandleFunc("POST /observations", s.saveObservation)
+	s.mux.HandleFunc("GET /observations", s.searchObservations)
+	s.mux.HandleFunc("PATCH /observations/{sync_id}", s.updateObservation)
 	s.mux.HandleFunc("POST /conflicts/judge", s.judgeConflict)
 }
 
@@ -142,5 +145,149 @@ func (s *Server) judgeConflict(w http.ResponseWriter, r *http.Request) {
 		"relation": j.Relation, "judgment_status": j.JudgmentStatus, "confidence": j.Confidence,
 		"session_id": j.SessionID, "superseded_relation_id": nullIfEmpty(j.SupersededRelationID),
 		"updated_at": j.UpdatedAt,
+	})
+}
+
+func (s *Server) searchObservations(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	p := store.SearchParams{
+		Query: q.Get("q"), MatchMode: q.Get("match_mode"), Project: q.Get("project"), Scope: q.Get("scope"),
+		Kind: q.Get("kind"), SessionID: q.Get("session_id"), Types: multi(q["type"]), Product: q.Get("product"),
+		Since: q.Get("since"), Until: q.Get("until"), Task: q.Get("task_id"),
+	}
+	var err error
+	if p.Limit, p.Offset, err = searchPage(q.Get("limit"), q.Get("offset")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ancestors, err := boolParam(q.Get("include_ancestors"), true, "include_ancestors")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	p.SkipAncestors = !ancestors
+	if p.IncludeSubtasks, err = boolParam(q.Get("include_subtasks"), false, "include_subtasks"); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	full, err := boolParam(q.Get("full"), false, "full")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if raw := q.Get("where"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &p.Where); err != nil {
+			s.fail(w, r, badRequest("where must be a JSON object"))
+			return
+		}
+	}
+	results, total, err := s.st.SearchObservations(r.Context(), p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	limit := p.Limit
+	if limit == 0 {
+		limit = store.DefaultSearchLimit
+	}
+	keys := map[string]string{}
+	out := make([]map[string]any, len(results))
+	for i, res := range results {
+		key, err := s.taskKey(r.Context(), keys, res.TaskID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		item := map[string]any{
+			"sync_id": res.SyncID, "title": res.Title, "type": res.Type, "project": res.Project, "scope": res.Scope,
+			"topic_key": nullIfEmpty(res.TopicKey), "kind": nullIfEmpty(res.Kind), "task_id": nullIfEmpty(res.TaskID),
+			"task_key": nullIfEmpty(key), "session_id": res.SessionID, "created_at": res.CreatedAt, "score": res.Score,
+		}
+		if full {
+			item["content"] = res.Content
+		} else {
+			item["preview"] = res.Preview
+		}
+		out[i] = item
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"query": p.Query, "total": total, "limit": limit, "offset": p.Offset,
+		"truncated": total > limit+p.Offset, "results": out,
+	})
+}
+
+func searchPage(limit, offset string) (l, o int, err error) {
+	if limit != "" {
+		if l, err = intParam(limit, "limit"); err != nil {
+			return 0, 0, err
+		}
+		if l == 0 {
+			return 0, 0, badRequest("limit must be between 1 and 200")
+		}
+	}
+	if offset != "" {
+		o, err = intParam(offset, "offset")
+	}
+	return l, o, err
+}
+
+func (s *Server) taskKey(ctx context.Context, cache map[string]string, id string) (string, error) {
+	if id == "" {
+		return "", nil
+	}
+	if key, ok := cache[id]; ok {
+		return key, nil
+	}
+	key, err := s.st.TaskKeyByID(ctx, id)
+	if err == nil {
+		cache[id] = key
+	}
+	return key, err
+}
+
+func fieldPtr(raw map[string]json.RawMessage, key string) (*string, error) {
+	if _, ok := raw[key]; !ok {
+		return nil, nil
+	}
+	v, err := fieldString(raw, key)
+	return &v, err
+}
+
+func (s *Server) updateObservation(w http.ResponseWriter, r *http.Request) {
+	raw, err := decodeFields(w, r, "session_id", "title", "content", "type", "topic_key", "task_id", "scope", "kind")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	sessionID, err := fieldString(raw, "session_id")
+	if err == nil && sessionID == "" {
+		err = badRequest("session_id is required")
+	}
+	if err == nil {
+		_, err = s.st.GetSession(r.Context(), sessionID)
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var p store.ObservationPatch
+	for key, dst := range map[string]**string{"title": &p.Title, "content": &p.Content, "type": &p.Type,
+		"topic_key": &p.TopicKey, "task_id": &p.TaskID, "scope": &p.Scope, "kind": &p.Kind} {
+		if *dst, err = fieldPtr(raw, key); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	res, err := s.st.UpdateObservation(r.Context(), r.PathValue("sync_id"), p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	o := res.Observation
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sync_id": o.SyncID, "title": o.Title, "type": o.Type, "project": o.Project, "scope": o.Scope,
+		"topic_key": nullIfEmpty(o.TopicKey), "kind": nullIfEmpty(o.Kind), "task_id": nullIfEmpty(o.TaskID),
+		"task_key": nullIfEmpty(res.TaskKey), "changed": res.Changed, "footer_rewritten": res.FooterRewritten,
+		"revision_count": o.RevisionCount, "updated_at": o.UpdatedAt,
 	})
 }

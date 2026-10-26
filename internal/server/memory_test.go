@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 )
 
@@ -102,6 +103,100 @@ func TestSaveRejections(t *testing.T) {
 			}
 		})
 	}
+}
+
+type searchBody struct {
+	Total     int  `json:"total"`
+	Truncated bool `json:"truncated"`
+	Results   []struct {
+		SyncID  string  `json:"sync_id"`
+		TaskKey string  `json:"task_key"`
+		Preview *string `json:"preview"`
+		Content *string `json:"content"`
+	} `json:"results"`
+}
+
+func TestSearchWithTaskAndSubtasks(t *testing.T) {
+	f := newFixture(t)
+	var direct, deep searchBody
+	f.get("/observations?task_id=EPIC-1", http.StatusOK, &direct)
+	f.get("/observations?task_id=EPIC-1&include_subtasks=true", http.StatusOK, &deep)
+	if direct.Total != 2 || deep.Total != 3 {
+		t.Fatalf("direct = %d, deep = %d", direct.Total, deep.Total)
+	}
+	for _, r := range deep.Results {
+		if r.SyncID == "obs-3" && r.TaskKey != "EPIC-1-a-x" {
+			t.Fatalf("task_key = %q", r.TaskKey)
+		}
+	}
+}
+
+func TestSearchFullSwitchesPreviewForContent(t *testing.T) {
+	f := newFixture(t)
+	var short, full searchBody
+	f.get("/observations?q=Grandchild", http.StatusOK, &short)
+	f.get("/observations?q=Grandchild&full=true", http.StatusOK, &full)
+	if len(short.Results) != 1 || short.Results[0].Preview == nil || short.Results[0].Content != nil {
+		t.Fatalf("short = %+v", short)
+	}
+	if full.Results[0].Content == nil || full.Results[0].Preview != nil {
+		t.Fatalf("full = %+v", full)
+	}
+}
+
+func TestSearchRejectsUnknownWhereColumn(t *testing.T) {
+	f := newFixture(t)
+	resp, err := http.Get(f.http.URL + `/observations?where={"impact":"high"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var e errorBody
+	json.NewDecoder(resp.Body).Decode(&e)
+	if resp.StatusCode != http.StatusUnprocessableEntity || e.Error.Code != "invalid_field" {
+		t.Fatalf("status %d, error %+v", resp.StatusCode, e.Error)
+	}
+}
+
+func (f *fixture) patch(path string, body any, want int, out any) {
+	f.t.Helper()
+	raw, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPatch, f.http.URL+path, bytes.NewReader(raw))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != want {
+		f.t.Fatalf("PATCH %s: status %d, want %d", path, resp.StatusCode, want)
+	}
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+}
+
+func TestPatchTaskRewritesTheFooter(t *testing.T) {
+	f := newFixture(t)
+	saved := f.save("s1", "Decision movible", nil)
+	var out struct {
+		TaskKey string   `json:"task_key"`
+		Changed []string `json:"changed"`
+		Footer  bool     `json:"footer_rewritten"`
+	}
+	f.patch("/observations/"+saved.SyncID, map[string]any{"session_id": "s1", "task_id": "EPIC-1-a"}, http.StatusOK, &out)
+	if out.TaskKey != "EPIC-1-a" || !out.Footer || !slices.Contains(out.Changed, "task_id") || !slices.Contains(out.Changed, "content") {
+		t.Fatalf("out = %+v", out)
+	}
+}
+
+func TestPatchRequiresSessionAndAField(t *testing.T) {
+	f := newFixture(t)
+	f.patch("/observations/obs-1", map[string]any{"title": "x"}, http.StatusBadRequest, nil)
+	f.patch("/observations/obs-1", map[string]any{"session_id": "s1"}, http.StatusBadRequest, nil)
+	f.patch("/observations/obs-1", map[string]any{"session_id": "nope", "title": "x"}, http.StatusNotFound, nil)
+	f.patch("/observations/obs-zz", map[string]any{"session_id": "s1", "title": "x"}, http.StatusNotFound, nil)
 }
 
 func TestJudgeRequiresSession(t *testing.T) {
