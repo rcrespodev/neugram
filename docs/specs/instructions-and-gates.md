@@ -51,7 +51,7 @@ usuario (ADR 0009).
 | `require-worktree-registered` | on | El turno ejecutó `git worktree add` (o `EnterWorktree`) y no hubo `worktree_register` con ese path en el turno | — |
 | `require-field` | off | Un `mem_save` del turno omitió el campo custom nombrado. Redundante con `required=1` en `schema_fields`, que ya rechaza el save; este gate existe para campos que se quieren exigir solo en ciertos productos | `{"field": "impact", "products": ["Portal"]}` |
 | `require-progress-report` | on | Solo en `subagent-stop`. El subagente mutó archivos y no hubo un `progress_write` exitoso en su transcript. El `reason` lista los archivos tocados y la llamada con los campos obligatorios | — |
-| `block-topic-key-collision` | off en el paso 3; on desde el paso 4 | Un `mem_save` trae `topic_key` que ya existe en el mismo project con distinto `sync_id`. Se evalúa en el daemon antes del `POST`, no en el `Stop`; el gate solo decide si se rechaza o se deja pasar como upsert | — |
+| `block-topic-key-collision` | off en el paso 3; se revisa en el paso 4 | Un `mem_save` trae `topic_key` que ya existe en el mismo project con distinto `sync_id`. Se evalúa en el daemon antes del `POST`, no en el `Stop`; el gate solo decide si se rechaza o se deja pasar como upsert | — |
 
 `block-topic-key-collision` arranca apagado porque choca con el protocolo
 vigente: los registros que se actualizan por `topic_key` (y el reintento de un
