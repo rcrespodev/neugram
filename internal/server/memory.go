@@ -118,24 +118,32 @@ func (s *Server) saveObservation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) judgeConflict(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		SessionID  string   `json:"session_id"`
-		JudgmentID string   `json:"judgment_id"`
-		Relation   string   `json:"relation"`
-		Reason     string   `json:"reason"`
-		Evidence   string   `json:"evidence"`
-		Confidence *float64 `json:"confidence"`
-	}
-	if err := decode(w, r, &in); err != nil {
+	raw, err := decodeFields(w, r, "session_id", "judgment_id", "relation", "reason", "evidence", "confidence")
+	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	var in struct{ SessionID, JudgmentID, Relation, Reason, Evidence string }
+	for key, dst := range map[string]*string{"session_id": &in.SessionID, "judgment_id": &in.JudgmentID,
+		"relation": &in.Relation, "reason": &in.Reason, "evidence": &in.Evidence} {
+		if *dst, err = fieldString(raw, key); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	var confidence *float64
+	if v, ok := raw["confidence"]; ok {
+		if err := json.Unmarshal(v, &confidence); err != nil {
+			s.fail(w, r, badRequest("confidence must be a number"))
+			return
+		}
 	}
 	if in.SessionID == "" {
 		s.fail(w, r, badRequest("session_id is required"))
 		return
 	}
 	j, err := s.st.JudgeRelation(r.Context(), store.JudgmentInput{JudgmentID: in.JudgmentID, Relation: in.Relation,
-		Reason: in.Reason, Evidence: in.Evidence, Confidence: in.Confidence, SessionID: in.SessionID})
+		Reason: in.Reason, Evidence: in.Evidence, Confidence: confidence, SessionID: in.SessionID})
 	if err != nil {
 		s.fail(w, r, err)
 		return

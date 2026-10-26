@@ -199,6 +199,73 @@ func TestPatchRequiresSessionAndAField(t *testing.T) {
 	f.patch("/observations/obs-zz", map[string]any{"session_id": "s1", "title": "x"}, http.StatusNotFound, nil)
 }
 
+func TestJudgeRejectsUnknownField(t *testing.T) {
+	f := newFixture(t)
+	e := f.postError("/conflicts/judge", map[string]any{"session_id": "s1", "judgment_id": "rel-x", "relation": "related", "bogus": 1}, http.StatusUnprocessableEntity)
+	if e.Error.Code != "invalid_field" {
+		t.Fatalf("code = %q", e.Error.Code)
+	}
+}
+
+func TestWriteRoutesRejectInvalidAndOversizedBodies(t *testing.T) {
+	f := newFixture(t)
+	huge := `{"session_id":"s1","title":"` + string(bytes.Repeat([]byte("a"), maxBodyBytes)) + `"}`
+	routes := []struct{ method, path string }{
+		{http.MethodPost, "/observations"},
+		{http.MethodPatch, "/observations/obs-1"},
+		{http.MethodPost, "/conflicts/judge"},
+	}
+	for _, rt := range routes {
+		for name, body := range map[string]string{"invalid json": "{nope", "oversized": huge} {
+			req, _ := http.NewRequest(rt.method, f.http.URL+rt.path, bytes.NewReader([]byte(body)))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var e errorBody
+			json.NewDecoder(resp.Body).Decode(&e)
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest || e.Error.Code != "invalid_request" {
+				t.Fatalf("%s %s %s: status %d, error %+v", rt.method, rt.path, name, resp.StatusCode, e.Error)
+			}
+		}
+	}
+}
+
+func TestSearchRejectsBadQueryParams(t *testing.T) {
+	f := newFixture(t)
+	for _, q := range []string{"limit=0", "limit=201", "limit=-1", "limit=abc", "offset=-1", "full=maybe",
+		"include_ancestors=maybe", "include_subtasks=2x"} {
+		resp, err := http.Get(f.http.URL + "/observations?" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var e errorBody
+		json.NewDecoder(resp.Body).Decode(&e)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest || e.Error.Code != "invalid_request" {
+			t.Fatalf("%s: status %d, error %+v", q, resp.StatusCode, e.Error)
+		}
+	}
+}
+
+func TestPatchNullClearsTopicKeyAndKind(t *testing.T) {
+	f := newFixture(t)
+	saved := f.save("s1", "Con topic", map[string]any{"topic_key": "tk-1"})
+	var out struct {
+		TopicKey *string `json:"topic_key"`
+		Kind     *string `json:"kind"`
+	}
+	f.patch("/observations/"+saved.SyncID, map[string]any{"session_id": "s1", "topic_key": nil}, http.StatusOK, &out)
+	if out.TopicKey != nil {
+		t.Fatalf("topic_key = %q, want null", *out.TopicKey)
+	}
+	f.patch("/observations/"+saved.SyncID, map[string]any{"session_id": "s1", "kind": nil, "title": "x"}, http.StatusOK, &out)
+	if out.Kind != nil {
+		t.Fatalf("kind = %q, want null", *out.Kind)
+	}
+}
+
 func TestJudgeRequiresSession(t *testing.T) {
 	f := newFixture(t)
 	e := f.postError("/conflicts/judge", map[string]any{"judgment_id": "rel-x", "relation": "related"}, http.StatusBadRequest)
