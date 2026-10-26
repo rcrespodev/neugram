@@ -3,7 +3,7 @@ WORKTREE := $(shell [ "$$(git rev-parse --git-dir 2>/dev/null)" != "$$(git rev-p
 VERSION ?= $(BASE_VERSION)$(if $(WORKTREE),-wt-$(WORKTREE))
 LDFLAGS := -X github.com/rcrespodev/neugram/internal/cli.Version=$(VERSION)
 
-.PHONY: build install test vet
+.PHONY: build install test vet e2e
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/neugram ./cmd/neugram
@@ -16,3 +16,6 @@ test:
 
 vet:
 	go vet ./...
+
+e2e:
+	go test -tags e2e ./internal/e2e/...
