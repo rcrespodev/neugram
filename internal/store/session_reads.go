@@ -25,6 +25,7 @@ func (s *Store) LastHandoffByDirectory(ctx context.Context, dir string) (Handoff
 	return s.lastHandoff(ctx, `o.session_id IN (SELECT id FROM sessions WHERE directory = ?)`, dir)
 }
 
+// lastHandoff orders by created_at; on a tie the later insert (higher id) wins.
 func (s *Store) lastHandoff(ctx context.Context, cond string, arg any) (HandoffNote, error) {
 	var note HandoffNote
 	var key sql.NullString

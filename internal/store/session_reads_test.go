@@ -60,6 +60,57 @@ func TestLastHandoffByDirectoryReturnsTheNewest(t *testing.T) {
 	wantCode(t, err, ErrNotFound)
 }
 
+func TestLastHandoffTieOnCreatedAtPicksTheLaterInsert(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	mustCreateTask(t, s, NewTask{Key: "T", Title: "t"})
+	newSession(t, s, "sess-2", "/repo/neugram")
+	handoffOf(t, s, "sess-1", "T", "primero")
+	handoffOf(t, s, "sess-2", "T", "segundo")
+	got, err := s.LastHandoff(ctx, "T")
+	if err != nil || got.Observation.SessionID != "sess-2" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	got, err = s.LastHandoffByDirectory(ctx, "/repo/neugram")
+	if err != nil || got.Observation.SessionID != "sess-2" {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+func TestLastHandoffSkipsSoftDeleted(t *testing.T) {
+	s, c := newTestStore(t)
+	ctx := context.Background()
+	mustCreateTask(t, s, NewTask{Key: "T", Title: "t"})
+	newSession(t, s, "sess-2", "/repo/neugram")
+	handoffOf(t, s, "sess-1", "T", "viejo")
+	c.advance(time.Hour)
+	handoffOf(t, s, "sess-2", "T", "nuevo")
+	newest, _ := s.LastHandoff(ctx, "T")
+	softDelete(t, s, newest.Observation.SyncID)
+
+	got, err := s.LastHandoff(ctx, "T")
+	if err != nil || got.Observation.SessionID != "sess-1" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	got, err = s.LastHandoffByDirectory(ctx, "/repo/neugram")
+	if err != nil || got.Observation.SessionID != "sess-1" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	softDelete(t, s, got.Observation.SyncID)
+	_, err = s.LastHandoff(ctx, "T")
+	wantCode(t, err, ErrNotFound)
+	_, err = s.LastHandoffByDirectory(ctx, "/repo/neugram")
+	wantCode(t, err, ErrNotFound)
+}
+
+func TestSearchSkipAncestorsOnAMiddleTask(t *testing.T) {
+	s := scopeFixture(t)
+	got, _ := search(t, s, SearchParams{Query: "alfa", Task: "TASK", SkipAncestors: true, IncludeSubtasks: true})
+	if m := titles(got); len(m) != 2 || !m["obs TASK"] || !m["obs SUB"] {
+		t.Fatalf("%v", m)
+	}
+}
+
 func TestLastPinnedSessionByDirectory(t *testing.T) {
 	s, c := newTestStore(t)
 	ctx := context.Background()
