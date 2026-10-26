@@ -97,7 +97,6 @@ func TestReplayAgainstLegacyGate(t *testing.T) {
 		}
 	}
 
-	// The legacy gate counts engram saves from any server; map them here only.
 	opts := Options{SaveTools: append([]string{
 		"mcp__plugin_engram_engram__mem_save",
 		"mcp__plugin_engram_engram__mem_update",

@@ -91,6 +91,16 @@ Si `stop_hook_active` es `true` termina con exit 0 (evita el bucle). Si no:
 2. Aplica cada gate habilitado (`specs/instructions-and-gates.md`).
 3. Si alguno falla, imprime JSON `{"decision":"block","reason":"<markdown>"}` y sale con 0. El `reason` nombra el gate, lo que vio, y la llamada exacta que lo destraba (por ejemplo `task_pin {"task_id":"TRIPULSE-3652"}` con las candidatas abiertas). Si todos pasan, sale con 0 sin salida.
 
+**Borde del turno.** Es todo lo que despierta al agente, no solo el mensaje
+humano: un mensaje humano real, `task-notification` (por `origin.kind` o por el
+prefijo `<task-notification>`), `<teammate-message`, "Another Claude session
+sent a message" y el texto `[Request interrupted by user…`. Motivo: `stop` corre
+una vez por despertar y el gate evalúa lo que pasó desde la última vez que el
+agente fue despertado, igual que el gate legacy. No son borde los `tool_result`,
+las entradas `isMeta` que no son despertares (feedback de hooks, `system-reminder`,
+`auto-continuation`) ni la salida de comandos locales (`<local-command-…`,
+`<bash-stdout>`).
+
 Los subagentes heredan `session_id`, así que heredan el pin; los gates de pin
 nunca les piden un pin propio. El `stop` del padre no cuenta las mutaciones de
 los subagentes.

@@ -125,6 +125,8 @@ func TestScanFixtures(t *testing.T) {
 		{"turn-after-human.jsonl", Turn, []string{"/home/r/proj/src/b.go"}},
 		{"turn-after-human.jsonl", Entire, []string{"/home/r/proj/src/a.go", "/home/r/proj/src/b.go"}},
 		{"noise.jsonl", Turn, []string{"/home/r/proj/src/c.go"}},
+		{"wake.jsonl", Turn, []string{"/home/r/proj/src/after.go"}},
+		{"wake.jsonl", Entire, []string{"/home/r/proj/src/before.go", "/home/r/proj/src/after.go"}},
 	}
 	for _, c := range cases {
 		res, err := Scan(filepath.Join("testdata", c.file), Options{Mode: c.mode})

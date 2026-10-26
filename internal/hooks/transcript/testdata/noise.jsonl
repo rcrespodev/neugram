@@ -4,10 +4,9 @@
 {"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "ahora esto"}, "origin": {"kind": "human"}}
 {"type": "assistant", "cwd": "/home/r/proj", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t2", "name": "Edit", "input": {"file_path": "/home/r/proj/src/c.go"}}]}}
 {"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}]}}
-{"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "<task-notification>done</task-notification>"}, "origin": {"kind": "task-notification"}}
 {"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "nota del arnes"}, "isMeta": true}
 {"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "<local-command-stdout>x</local-command-stdout>"}}
-{"type": "user", "cwd": "/home/r/proj", "origin": {"kind": "peer"}, "message": {"role": "user", "content": "mensaje de par"}}
+{"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": "limite de uso"}, "isMeta": true, "origin": {"kind": "auto-continuation"}}
 {"type": "assistant", "cwd": "/home/r/proj", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t3", "name": "Edit", "input": {"file_path": "/home/r/proj/src/fail.go"}}]}}
 {"type": "user", "cwd": "/home/r/proj", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t3", "content": "ok", "is_error": true}]}}
 {"type": "last-prompt", "lastPrompt": "x"}

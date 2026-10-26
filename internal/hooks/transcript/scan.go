@@ -73,11 +73,12 @@ type block struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
+	Text      string          `json:"text"`
 	ToolUseID string          `json:"tool_use_id"`
 	IsError   bool            `json:"is_error"`
 }
 
-const chunkSize = 1 << 20
+var chunkSize = 1 << 20
 
 func Scan(path string, opts Options) (*Result, error) {
 	f, err := os.Open(path)
@@ -151,7 +152,7 @@ func readTurn(f *os.File) ([]entry, error) {
 			if !ok {
 				continue
 			}
-			if isHuman(e) {
+			if isBoundary(e) {
 				return reverse(reversed), nil
 			}
 			reversed = append(reversed, e)
@@ -167,41 +168,58 @@ func reverse(es []entry) []entry {
 	return es
 }
 
-var systemPrefixes = []string{"<local-command-", "<bash-stdout>", "<bash-stderr>", "<task-notification>"}
+var systemPrefixes = []string{"<local-command-", "<bash-stdout>", "<bash-stderr>"}
 
-func isHuman(e entry) bool {
-	if e.Type != "user" || e.IsMeta {
-		return false
-	}
-	if e.Origin != nil && e.Origin.Kind != "" && e.Origin.Kind != "human" {
-		return false
-	}
+// Every automatic wake-up of the agent starts a new turn, like a human message.
+var wakeKinds = map[string]bool{"task-notification": true, "peer": true}
+
+var wakePrefixes = []string{
+	"<task-notification>",
+	"<teammate-message",
+	"Another Claude session sent a message",
+	"[Request interrupted by user",
+}
+
+func entryText(e entry) string {
 	raw := bytes.TrimSpace(e.Message.Content)
 	if len(raw) == 0 {
-		return false
+		return ""
 	}
 	if raw[0] == '"' {
 		var s string
-		if json.Unmarshal(raw, &s) != nil {
-			return false
-		}
-		s = strings.TrimSpace(s)
-		if s == "" {
-			return false
-		}
-		for _, p := range systemPrefixes {
-			if strings.HasPrefix(s, p) {
-				return false
-			}
-		}
-		return true
+		_ = json.Unmarshal(raw, &s)
+		return strings.TrimSpace(s)
 	}
+	var parts []string
 	for _, b := range blocksOf(e) {
 		if b.Type == "text" {
+			parts = append(parts, b.Text)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
 			return true
 		}
 	}
 	return false
+}
+
+func isBoundary(e entry) bool {
+	if e.Type != "user" {
+		return false
+	}
+	text := entryText(e)
+	if text == "" {
+		return false
+	}
+	if (e.Origin != nil && wakeKinds[e.Origin.Kind]) || hasAnyPrefix(text, wakePrefixes) {
+		return true
+	}
+	return !e.IsMeta && !hasAnyPrefix(text, systemPrefixes)
 }
 
 func blocksOf(e entry) []block {
