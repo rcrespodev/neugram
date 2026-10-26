@@ -138,15 +138,16 @@ func (s *Server) saveHandoff(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	v := r.URL.Query()
-	for _, unsupported := range []string{"tree", "where"} {
-		if v.Get(unsupported) != "" && v.Get(unsupported) != "false" {
-			s.fail(w, r, &store.Error{Code: "invalid_request", Message: unsupported + " is not supported yet"})
-			return
-		}
+	if v.Get("where") != "" {
+		s.fail(w, r, &store.Error{Code: "invalid_field", Message: "where: there are no custom fields yet"})
+		return
 	}
 	q := store.TaskQuery{Statuses: multi(v["status"]), Product: v.Get("product"), Parent: v.Get("parent")}
-	var err error
-	if q.RootsOnly, err = boolParam(v.Get("roots_only"), false, "roots_only"); err == nil {
+	tree, err := boolParam(v.Get("tree"), false, "tree")
+	if err == nil {
+		q.RootsOnly, err = boolParam(v.Get("roots_only"), false, "roots_only")
+	}
+	if err == nil {
 		q.IncludeDone, err = boolParam(v.Get("include_done"), false, "include_done")
 	}
 	if err == nil {
@@ -161,7 +162,41 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "limit": q.Limit, "offset": q.Offset, "tree": false, "tasks": tasks})
+	body := map[string]any{"total": total, "limit": q.Limit, "offset": q.Offset, "tree": tree, "tasks": tasks}
+	if tree {
+		if body["tasks"], err = s.nest(r, q, tasks); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// taskNode is a GET /tasks row under tree=true; children is [] on leaves.
+type taskNode struct {
+	store.TaskSummary
+	Children []taskNode `json:"children"`
+}
+
+// nest hangs each task's direct children under it, with the status filter of
+// the request but not its product or paging.
+func (s *Server) nest(r *http.Request, q store.TaskQuery, tasks []store.TaskSummary) ([]taskNode, error) {
+	nodes := make([]taskNode, len(tasks))
+	for i, t := range tasks {
+		nodes[i] = taskNode{TaskSummary: t, Children: []taskNode{}}
+		if t.ChildrenCount == 0 {
+			continue
+		}
+		sub := store.TaskQuery{Statuses: q.Statuses, IncludeDone: q.IncludeDone, Parent: t.TaskKey, Limit: store.MaxLimit}
+		children, _, err := s.st.ListTasks(r.Context(), sub)
+		if err != nil {
+			return nil, err
+		}
+		if nodes[i].Children, err = s.nest(r, sub, children); err != nil {
+			return nil, err
+		}
+	}
+	return nodes, nil
 }
 
 func (s *Server) showTask(w http.ResponseWriter, r *http.Request) {

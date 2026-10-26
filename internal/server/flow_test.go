@@ -135,6 +135,37 @@ func TestSaveHandoffTwiceReplaces(t *testing.T) {
 	}
 }
 
+type taskTree struct {
+	Tree  bool `json:"tree"`
+	Tasks []struct {
+		TaskKey  string `json:"task_key"`
+		Children []struct {
+			TaskKey  string `json:"task_key"`
+			Children []struct {
+				TaskKey  string            `json:"task_key"`
+				Children []json.RawMessage `json:"children"`
+			} `json:"children"`
+		} `json:"children"`
+	} `json:"tasks"`
+}
+
+func TestListTasksTreeNestsThreeLevels(t *testing.T) {
+	f := newFixture(t)
+	var got taskTree
+	f.get("/tasks?tree=true&roots_only=true", http.StatusOK, &got)
+	if !got.Tree || len(got.Tasks) != 2 {
+		t.Fatalf("got %+v", got)
+	}
+	epic := got.Tasks[0]
+	if epic.TaskKey != "EPIC-1" || len(epic.Children) != 1 || epic.Children[0].TaskKey != "EPIC-1-a" {
+		t.Fatalf("epic %+v", epic)
+	}
+	leaf := epic.Children[0].Children
+	if len(leaf) != 1 || leaf[0].TaskKey != "EPIC-1-a-x" || leaf[0].Children == nil || len(leaf[0].Children) != 0 {
+		t.Fatalf("leaf %+v", leaf)
+	}
+}
+
 func TestSaveHandoffErrors(t *testing.T) {
 	f := newFixture(t)
 	f.flowError("PUT", "/sessions/nope/handoff", map[string]string{"content": "x"}, 404, "unknown_session")

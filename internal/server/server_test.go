@@ -212,7 +212,8 @@ func TestListTasksRejectsBadInput(t *testing.T) {
 		{"/tasks?limit=201", http.StatusBadRequest, "invalid_request"},
 		{"/tasks?offset=-1", http.StatusBadRequest, "invalid_request"},
 		{"/tasks?include_done=maybe", http.StatusBadRequest, "invalid_request"},
-		{"/tasks?tree=true", http.StatusBadRequest, "invalid_request"},
+		{"/tasks?tree=maybe", http.StatusBadRequest, "invalid_request"},
+		{"/tasks?where=impact", http.StatusUnprocessableEntity, "invalid_field"},
 		{"/tasks?parent=NOPE", http.StatusNotFound, "unknown_task"},
 	}
 	for _, c := range cases {
