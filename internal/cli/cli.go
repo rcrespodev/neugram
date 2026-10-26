@@ -2,10 +2,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"runtime"
 	"runtime/debug"
+
+	"github.com/rcrespodev/neugram/internal/mcp"
 )
 
 // Version is set at build time with -ldflags "-X github.com/rcrespodev/neugram/internal/cli.Version=...".
@@ -24,6 +29,8 @@ commands:
                 worktrees of a task, alive or dead
   product ls [--json]
                 list products with their task counts
+  mcp           serve MCP tools over stdio as a thin client of the daemon;
+                starts the daemon if none answers, never replaces a live one
   import-legacy [--dry-run] [--engram-db PATH] [--db PATH]
                 import ~/.engram/engram.db into neugram.db
   doctor [--db PATH]
@@ -50,6 +57,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runTask(args[1:], stdout, stderr)
 	case "product":
 		return runProduct(args[1:], stdout, stderr)
+	case "mcp":
+		return runMCP(stderr)
 	case "import-legacy":
 		return runImportLegacy(args[1:], stdout, stderr)
 	case "doctor":
@@ -90,4 +99,17 @@ func revision() string {
 		rev = rev[:7]
 	}
 	return rev + dirty
+}
+
+// runMCP keeps stdout for the protocol; notices go to stderr.
+func runMCP(stderr io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	c := newClient()
+	c.Logf = func(format string, args ...any) { fmt.Fprintf(stderr, "neugram mcp: "+format+"\n", args...) }
+	if err := mcp.New(c).Run(ctx, os.Stdin, os.Stdout, buildVersion()); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(stderr, "neugram mcp: %v\n", err)
+		return 1
+	}
+	return 0
 }
