@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -51,7 +52,69 @@ func classify(res *Result, cwd string, b block, saveTools []string) {
 	case b.Name == "Bash":
 		command, _ := input["command"].(string)
 		res.Mutations = append(res.Mutations, bashMutations(command, cwd)...)
+		for _, p := range worktreeAdds(stripHeredocBodies(command), cwd) {
+			res.Worktrees = append(res.Worktrees, Worktree{Tool: "Bash", Path: p})
+			res.Mutations = append(res.Mutations, Mutation{Tool: "Bash", Path: p, Command: command})
+		}
+	case b.Name == "EnterWorktree":
+		p := enterWorktreePath(input, cwd)
+		res.Worktrees = append(res.Worktrees, Worktree{Tool: b.Name, Path: p})
+		res.Mutations = append(res.Mutations, Mutation{Tool: b.Name, Path: p})
+	case slices.Contains(saveTools, b.Name):
+		res.Saves = append(res.Saves, Call{Tool: b.Name, Input: input})
 	}
+}
+
+func enterWorktreePath(input map[string]any, cwd string) string {
+	if p, _ := input["path"].(string); p != "" {
+		return resolvePath(p, cwd)
+	}
+	if name, _ := input["name"].(string); name != "" && cwd != "" {
+		return path.Join(cwd, ".claude", "worktrees", name)
+	}
+	return ""
+}
+
+var worktreeValueFlags = map[string]bool{"-b": true, "-B": true, "--reason": true, "--lock-reason": true}
+
+// worktreeAdds returns the absolute path of each `git worktree add` in the command.
+func worktreeAdds(command, cwd string) []string {
+	var out []string
+	tokens := shellTokens(command)
+	for i := 0; i < len(tokens); {
+		end := i
+		for end < len(tokens) && !commandBreaks[tokens[end]] {
+			end++
+		}
+		seg := tokens[i:end]
+		i = end + 1
+		if len(seg) == 0 || seg[0] != "git" {
+			continue
+		}
+		base := cwd
+		j := 1
+		for j < len(seg) && strings.HasPrefix(seg[j], "-") {
+			if (seg[j] == "-C" || seg[j] == "-c") && j+1 < len(seg) {
+				if seg[j] == "-C" {
+					base = resolvePath(seg[j+1], base)
+				}
+				j++
+			}
+			j++
+		}
+		if j+1 >= len(seg) || seg[j] != "worktree" || seg[j+1] != "add" {
+			continue
+		}
+		for k := j + 2; k < len(seg); k++ {
+			if worktreeValueFlags[seg[k]] {
+				k++
+			} else if !strings.HasPrefix(seg[k], "-") {
+				out = append(out, resolvePath(seg[k], base))
+				break
+			}
+		}
+	}
+	return out
 }
 
 func resolvePath(p, cwd string) string {

@@ -61,6 +61,13 @@ func render(steps []step) string {
 	return b.String()
 }
 
+func writeFile(t *testing.T, path, data string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func scanSteps(t *testing.T, mode Mode, steps ...step) *Result {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "t.jsonl")
