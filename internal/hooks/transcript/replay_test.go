@@ -112,13 +112,9 @@ func TestReplayAgainstLegacyGate(t *testing.T) {
 			t.Fatalf("%s: %v", f, err)
 		}
 		want := legacy[f]
-		isWorktree := map[string]bool{}
-		for _, w := range res.Worktrees {
-			isWorktree[w.Path] = true
-		}
 		wrote := false
 		for _, m := range res.Mutations {
-			if !isWorktree[m.Path] || m.Path == "" {
+			if !m.Worktree {
 				wrote = true
 			}
 		}

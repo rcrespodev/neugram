@@ -32,15 +32,22 @@ var DefaultSaveTools = []string{
 	"mcp__neugram__worktree_register",
 }
 
+// Mutation is one durable change. Unresolved marks a target that holds a shell
+// expansion: Path is then the raw word, or empty when no path is known.
 type Mutation struct {
-	Tool    string
-	Path    string
-	Command string
+	Tool       string
+	Path       string
+	Command    string
+	Unresolved bool
+	// Worktree marks the mutation that is a worktree creation.
+	Worktree bool
 }
 
+// Worktree is a created worktree. Unresolved leaves Path empty when it held an expansion.
 type Worktree struct {
-	Tool string
-	Path string
+	Tool       string
+	Path       string
+	Unresolved bool
 }
 
 type Call struct {

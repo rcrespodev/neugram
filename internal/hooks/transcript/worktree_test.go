@@ -99,3 +99,13 @@ func TestSaveKeepsInput(t *testing.T) {
 		t.Fatalf("%+v", res.Saves)
 	}
 }
+
+func TestWorktreeWithExpansionIsUnresolved(t *testing.T) {
+	res := scanSteps(t, Turn, bash("git worktree add -b x $WT Development"))
+	if len(res.Worktrees) != 1 || res.Worktrees[0].Path != "" || !res.Worktrees[0].Unresolved {
+		t.Fatalf("%+v", res.Worktrees)
+	}
+	if len(res.Mutations) != 1 || !res.Mutations[0].Worktree || !res.Mutations[0].Unresolved {
+		t.Fatalf("%+v", res.Mutations)
+	}
+}

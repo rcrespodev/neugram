@@ -12,20 +12,30 @@ var writeTools = map[string]bool{"Edit": true, "Write": true, "MultiEdit": true,
 
 var scratchParts = []string{"/scratchpad/", "/tmp/", "/.git/", "/node_modules/"}
 
-// Durable whatever paths they touch.
-var publishCommands = []string{"git commit", "git push", "gh pr create", "gh issue create"}
-
-var inPlaceEditors = []string{"sed -i", "tee "}
-
 var nullSinks = map[string]bool{"/dev/null": true, "/dev/stdout": true, "/dev/stderr": true}
 
-// Commands whose non-flag arguments are the paths they mutate.
-var pathMutators = map[string]bool{"mv": true, "rm": true, "mkdir": true, "touch": true}
+// Operators that end one command and start the next.
+var commandBreaks = map[string]bool{"&&": true, "||": true, "|": true, ";": true, "&": true, "(": true, ")": true}
 
-// A token that names a file rather than a sed script (`s/a/b/`) or a flag.
-var pathish = regexp.MustCompile(`^(?:/|\./|\.\./|~/)|^[\w.-]+/[\w./-]*\.\w+$`)
+// Operators whose next word is a file that gets written.
+var writeRedirects = map[string]bool{">": true, ">>": true, ">|": true, "&>": true, "&>>": true}
 
-var heredocStart = regexp.MustCompile(`<<-?\s*['"]?(\w+)['"]?`)
+// Words that precede the real command without changing what it mutates.
+var shellKeywords = map[string]bool{
+	"do": true, "then": true, "else": true, "elif": true, "if": true, "while": true,
+	"until": true, "!": true, "{": true, "time": true, "command": true, "exec": true,
+	"nohup": true, "builtin": true,
+}
+
+// Wrappers that take their own flags, and which of those flags take a value.
+var wrappers = map[string]map[string]bool{
+	"sudo":  {"-u": true, "-g": true},
+	"env":   {"-u": true},
+	"xargs": {"-I": true, "-n": true, "-P": true, "-L": true, "-d": true, "-E": true, "-s": true},
+	"nice":  {"-n": true},
+}
+
+var assignment = regexp.MustCompile(`^[A-Za-z_]\w*=`)
 
 func isScratch(p string) bool {
 	for _, part := range scratchParts {
@@ -51,15 +61,13 @@ func classify(res *Result, cwd string, b block, saveTools []string) {
 		}
 	case b.Name == "Bash":
 		command, _ := input["command"].(string)
-		res.Mutations = append(res.Mutations, bashMutations(command, cwd)...)
-		for _, p := range worktreeAdds(stripHeredocBodies(command), cwd) {
-			res.Worktrees = append(res.Worktrees, Worktree{Tool: "Bash", Path: p})
-			res.Mutations = append(res.Mutations, Mutation{Tool: "Bash", Path: p, Command: command})
-		}
+		bash := analyzeBash(command, cwd)
+		res.Mutations = append(res.Mutations, bash.mutations...)
+		res.Worktrees = append(res.Worktrees, bash.worktrees...)
 	case b.Name == "EnterWorktree":
 		p := enterWorktreePath(input, cwd)
 		res.Worktrees = append(res.Worktrees, Worktree{Tool: b.Name, Path: p})
-		res.Mutations = append(res.Mutations, Mutation{Tool: b.Name, Path: p})
+		res.Mutations = append(res.Mutations, Mutation{Tool: b.Name, Path: p, Worktree: true})
 	case slices.Contains(saveTools, b.Name):
 		res.Saves = append(res.Saves, Call{Tool: b.Name, Input: input})
 	}
@@ -75,247 +83,261 @@ func enterWorktreePath(input map[string]any, cwd string) string {
 	return ""
 }
 
-var worktreeValueFlags = map[string]bool{"-b": true, "-B": true, "--reason": true, "--lock-reason": true}
-
-// worktreeAdds returns the absolute path of each `git worktree add` in the command.
-func worktreeAdds(command, cwd string) []string {
-	var out []string
-	tokens := shellTokens(command)
-	for i := 0; i < len(tokens); {
-		end := i
-		for end < len(tokens) && !commandBreaks[tokens[end]] {
-			end++
-		}
-		seg := tokens[i:end]
-		i = end + 1
-		if len(seg) == 0 || seg[0] != "git" {
-			continue
-		}
-		base := cwd
-		j := 1
-		for j < len(seg) && strings.HasPrefix(seg[j], "-") {
-			if (seg[j] == "-C" || seg[j] == "-c") && j+1 < len(seg) {
-				if seg[j] == "-C" {
-					base = resolvePath(seg[j+1], base)
-				}
-				j++
-			}
-			j++
-		}
-		if j+1 >= len(seg) || seg[j] != "worktree" || seg[j+1] != "add" {
-			continue
-		}
-		for k := j + 2; k < len(seg); k++ {
-			if worktreeValueFlags[seg[k]] {
-				k++
-			} else if !strings.HasPrefix(seg[k], "-") {
-				out = append(out, resolvePath(seg[k], base))
-				break
-			}
-		}
-	}
-	return out
-}
-
-func resolvePath(p, cwd string) string {
-	if p == "" || path.IsAbs(p) || strings.HasPrefix(p, "~") || cwd == "" {
+func resolvePath(p, base string) string {
+	if p == "" || path.IsAbs(p) || strings.HasPrefix(p, "~") || base == "" {
 		return p
 	}
-	return path.Join(cwd, p)
+	return path.Join(base, p)
 }
 
-func scratchOrOutside(raw, resolved string) bool {
-	return isScratch(raw) || isScratch(resolved)
+type bashResult struct {
+	mutations []Mutation
+	worktrees []Worktree
 }
 
-func bashMutations(command, cwd string) []Mutation {
-	command = stripHeredocBodies(command)
-	for _, marker := range publishCommands {
-		if strings.Contains(command, marker) {
-			return []Mutation{{Tool: "Bash", Command: command}}
-		}
-	}
+type analyzer struct {
+	command string
+	dir     string
+	seen    map[string]bool
+	out     bashResult
+}
 
-	tokens := shellTokens(command)
-	inPlace := false
-	for _, marker := range inPlaceEditors {
-		if strings.Contains(command, marker) {
-			inPlace = true
-		}
-	}
-
-	var targets []string
-	for _, t := range redirectTargets(command) {
-		if t = cleanTarget(t); t != "" && !nullSinks[t] {
-			targets = append(targets, t)
-		}
-	}
-	if inPlace {
-		for _, t := range tokens {
-			if pathish.MatchString(t) {
-				targets = append(targets, t)
+func analyzeBash(command, cwd string) bashResult {
+	a := &analyzer{command: stripHeredocBodies(command), dir: cwd, seen: map[string]bool{}}
+	tokens := shellTokens(a.command)
+	var seg []tok
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		switch {
+		case t.op && commandBreaks[t.text]:
+			a.segment(seg)
+			seg = nil
+		case t.op && writeRedirects[t.text]:
+			if i+1 < len(tokens) && !tokens[i+1].op {
+				i++
+				a.target(tokens[i])
 			}
-		}
-	}
-	mutatorPaths, packageManager := scanSegments(tokens)
-	targets = append(targets, mutatorPaths...)
-
-	var out []Mutation
-	seen := map[string]bool{}
-	for _, t := range targets {
-		resolved := resolvePath(t, cwd)
-		if scratchOrOutside(t, resolved) || seen[resolved] {
-			continue
-		}
-		seen[resolved] = true
-		out = append(out, Mutation{Tool: "Bash", Path: resolved, Command: command})
-	}
-	if len(out) == 0 && (packageManager || (inPlace && len(targets) == 0)) {
-		out = append(out, Mutation{Tool: "Bash", Command: command})
-	}
-	return out
-}
-
-func stripHeredocBodies(command string) string {
-	if !heredocStart.MatchString(command) {
-		return command
-	}
-	var kept []string
-	delimiter := ""
-	for _, line := range strings.Split(command, "\n") {
-		if delimiter == "" {
-			kept = append(kept, line)
-			if m := heredocStart.FindStringSubmatch(line); m != nil {
-				delimiter = m[1]
+		case t.op:
+			if i+1 < len(tokens) && !tokens[i+1].op {
+				i++
 			}
-		} else if strings.TrimSpace(line) == delimiter {
-			delimiter = ""
+		default:
+			seg = append(seg, t)
 		}
 	}
-	return strings.Join(kept, "\n")
+	a.segment(seg)
+	return a.out
 }
 
-// redirectTargets finds `>f` and `>>f`, excluding `2>`, `&>`, `>&2` and process substitution.
-func redirectTargets(s string) []string {
-	var out []string
-	for i := 0; i < len(s); i++ {
-		if s[i] != '>' || (i > 0 && (s[i-1] == '&' || (s[i-1] >= '0' && s[i-1] <= '9'))) {
-			continue
-		}
-		j := i + 1
-		if j < len(s) && s[j] == '>' {
-			j++
-		}
-		for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
-			j++
-		}
-		if j >= len(s) || s[j] == '&' || s[j] == '(' {
-			continue
-		}
-		start := j
-		for j < len(s) && !strings.ContainsRune(" \t\r\n;|&<>()", rune(s[j])) {
-			j++
-		}
-		if j > start {
-			out = append(out, s[start:j])
-		}
-		i = j - 1
+func (a *analyzer) bare() {
+	if !a.seen[""] {
+		a.seen[""] = true
+		a.out.mutations = append(a.out.mutations, Mutation{Tool: "Bash", Command: a.command})
 	}
-	return out
 }
 
-func cleanTarget(t string) string {
-	t = strings.Trim(strings.TrimSpace(t), `'"`)
-	if t == "" || strings.ContainsAny(t, "\"'{}\\") {
-		return ""
+// target records a file the command writes. A word we cannot expand is a non-scratch mutation.
+func (a *analyzer) target(t tok) {
+	raw := t.text
+	if raw == "" || nullSinks[raw] || isScratch(raw) {
+		return
 	}
-	return t
+	p, unresolved := raw, t.dyn
+	if !t.dyn {
+		p = resolvePath(raw, a.dir)
+		if isScratch(p) {
+			return
+		}
+	}
+	if a.seen[p] {
+		return
+	}
+	a.seen[p] = true
+	a.out.mutations = append(a.out.mutations, Mutation{Tool: "Bash", Path: p, Command: a.command, Unresolved: unresolved})
 }
 
-var commandBreaks = map[string]bool{"&&": true, "||": true, "|": true, ";": true, "&": true}
-
-var leadingWrappers = map[string]bool{"sudo": true, "command": true, "env": true}
-
-func scanSegments(tokens []string) (paths []string, packageManager bool) {
-	for i := 0; i < len(tokens); {
-		end := i
-		for end < len(tokens) && !commandBreaks[tokens[end]] {
-			end++
+func (a *analyzer) segment(seg []tok) {
+	viaXargs := false
+	for len(seg) > 0 {
+		head := seg[0].text
+		switch {
+		case shellKeywords[head] || assignment.MatchString(head):
+			seg = seg[1:]
+		case wrappers[head] != nil:
+			viaXargs = viaXargs || head == "xargs"
+			seg = skipFlags(seg[1:], wrappers[head])
+		default:
+			a.command1(seg[0].text, seg[1:], viaXargs)
+			return
 		}
-		seg := tokens[i:end]
-		i = end + 1
-		for len(seg) > 0 && (leadingWrappers[seg[0]] || strings.Contains(seg[0], "=") && !strings.HasPrefix(seg[0], "-")) {
+	}
+}
+
+func skipFlags(seg []tok, valueFlags map[string]bool) []tok {
+	for len(seg) > 0 && strings.HasPrefix(seg[0].text, "-") && len(seg[0].text) > 1 {
+		if valueFlags[seg[0].text] && len(seg) > 1 {
 			seg = seg[1:]
 		}
-		if len(seg) == 0 {
-			continue
-		}
-		switch {
-		case pathMutators[seg[0]]:
-			for _, a := range seg[1:] {
-				if !strings.HasPrefix(a, "-") {
-					paths = append(paths, a)
-				}
-			}
-		case seg[0] == "go" && len(seg) > 1 && seg[1] == "mod":
-			packageManager = true
-		case seg[0] == "npm" && len(seg) > 1 && (seg[1] == "i" || seg[1] == "install"):
-			packageManager = true
-		}
+		seg = seg[1:]
 	}
-	return paths, packageManager
+	return seg
 }
 
-// shellTokens splits a command on whitespace honoring quotes, and emits
-// unquoted control operators as their own tokens.
-func shellTokens(s string) []string {
-	var tokens []string
-	var cur strings.Builder
-	has := false
-	flush := func() {
-		if has {
-			tokens = append(tokens, cur.String())
-			cur.Reset()
-			has = false
+func (a *analyzer) command1(name string, args []tok, viaXargs bool) {
+	switch name {
+	case "cd":
+		if len(args) == 0 || args[0].dyn || args[0].text == "-" {
+			a.dir = ""
+		} else {
+			a.dir = resolvePath(args[0].text, a.dir)
+		}
+	case "git":
+		a.git(args)
+	case "gh":
+		a.gh(args)
+	case "tee":
+		for _, t := range positional(args, nil) {
+			a.target(t)
+		}
+	case "sed", "perl":
+		a.inPlaceEditor(name, args)
+	default:
+		a.fileCommand(name, args, viaXargs)
+	}
+}
+
+var gitValueFlags = map[string]bool{"-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true}
+
+func (a *analyzer) git(args []tok) {
+	base := a.dir
+	for len(args) > 0 && strings.HasPrefix(args[0].text, "-") {
+		flag := args[0].text
+		if gitValueFlags[flag] && len(args) > 1 {
+			if flag == "-C" && !args[1].dyn {
+				base = resolvePath(args[1].text, base)
+			}
+			args = args[1:]
+		}
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return
+	}
+	switch args[0].text {
+	case "commit", "push":
+		a.bare()
+	case "worktree":
+		if len(args) > 1 && args[1].text == "add" {
+			a.worktreeAdd(args[2:], base)
 		}
 	}
-	var quote byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
+}
+
+var worktreeValueFlags = map[string]bool{"-b": true, "-B": true, "--reason": true, "--lock-reason": true}
+
+func (a *analyzer) worktreeAdd(args []tok, base string) {
+	pos := positional(args, worktreeValueFlags)
+	if len(pos) == 0 {
+		return
+	}
+	wt := Worktree{Tool: "Bash"}
+	if pos[0].dyn {
+		wt.Unresolved = true
+	} else {
+		wt.Path = resolvePath(pos[0].text, base)
+	}
+	a.out.worktrees = append(a.out.worktrees, wt)
+	a.out.mutations = append(a.out.mutations, Mutation{Tool: "Bash", Path: wt.Path, Command: a.command, Unresolved: wt.Unresolved, Worktree: true})
+}
+
+func (a *analyzer) gh(args []tok) {
+	pos := positional(args, map[string]bool{"-R": true, "--repo": true})
+	if len(pos) >= 2 && pos[1].text == "create" && (pos[0].text == "pr" || pos[0].text == "issue") {
+		a.bare()
+	}
+}
+
+// positional returns the non-flag words, skipping the values of valueFlags.
+func positional(args []tok, valueFlags map[string]bool) []tok {
+	var out []tok
+	for i := 0; i < len(args); i++ {
+		text := args[i].text
 		switch {
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			} else if c == '\\' && quote == '"' && i+1 < len(s) {
-				i++
-				cur.WriteByte(s[i])
-			} else {
-				cur.WriteByte(c)
-			}
-		case c == '\'' || c == '"':
-			quote, has = c, true
-		case c == '\\' && i+1 < len(s):
+		case text == "--":
+			out = append(out, args[i+1:]...)
+			return out
+		case valueFlags[text]:
 			i++
-			cur.WriteByte(s[i])
-			has = true
-		case c == ' ' || c == '\t' || c == '\r':
-			flush()
-		case c == '\n' || c == ';':
-			flush()
-			tokens = append(tokens, ";")
-		case c == '&' || c == '|':
-			flush()
-			op := string(c)
-			if i+1 < len(s) && s[i+1] == c {
-				op += op
-				i++
-			}
-			tokens = append(tokens, op)
+		case strings.HasPrefix(text, "-") && len(text) > 1:
 		default:
-			cur.WriteByte(c)
-			has = true
+			out = append(out, args[i])
 		}
 	}
-	flush()
-	return tokens
+	return out
+}
+
+var (
+	sedInPlace  = regexp.MustCompile(`^(?:-[nEsz]*i|--in-place)`)
+	perlInPlace = regexp.MustCompile(`^-[pnal0-9]*i`)
+)
+
+func (a *analyzer) inPlaceEditor(name string, args []tok) {
+	re := sedInPlace
+	if name == "perl" {
+		re = perlInPlace
+	}
+	inPlace, scriptFlag := false, false
+	for _, t := range args {
+		if re.MatchString(t.text) {
+			inPlace = true
+		}
+		if t.text == "-e" || t.text == "-f" || strings.HasPrefix(t.text, "--expression") || strings.HasPrefix(t.text, "--file") {
+			scriptFlag = true
+		}
+	}
+	if !inPlace {
+		return
+	}
+	files := positional(args, map[string]bool{"-e": true, "-f": true, "--expression": true, "--file": true})
+	if !scriptFlag && len(files) > 0 {
+		files = files[1:]
+	}
+	if len(files) == 0 {
+		a.bare()
+	}
+	for _, f := range files {
+		a.target(f)
+	}
+}
+
+// Commands whose positional arguments are all paths they change.
+var pathCommands = map[string]map[string]bool{
+	"mv":    {"-t": true, "--target-directory": true, "-S": true, "--suffix": true},
+	"rm":    {},
+	"mkdir": {"-m": true, "--mode": true},
+	"touch": {"-d": true, "-r": true, "-t": true, "--date": true, "--reference": true},
+}
+
+// Subcommands that change the dependency files of the project.
+var packageCommands = map[string][]string{
+	"npm": {"i", "install"},
+	"go":  {"mod"},
+}
+
+func (a *analyzer) fileCommand(name string, args []tok, viaXargs bool) {
+	if flags, ok := pathCommands[name]; ok {
+		pos := positional(args, flags)
+		if len(pos) == 0 && viaXargs {
+			a.out.mutations = append(a.out.mutations, Mutation{Tool: "Bash", Command: a.command, Unresolved: true})
+		}
+		for _, t := range pos {
+			a.target(t)
+		}
+		return
+	}
+	if subs, ok := packageCommands[name]; ok {
+		if pos := positional(args, nil); len(pos) > 0 && slices.Contains(subs, pos[0].text) {
+			a.bare()
+		}
+	}
 }
