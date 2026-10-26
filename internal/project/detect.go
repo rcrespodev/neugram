@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 const (
@@ -82,13 +85,31 @@ func gitRoots(ctx context.Context, dir string) (root, mainRoot string) {
 	return root, root
 }
 
-func repoNameFromURL(url string) string {
-	url = strings.TrimSuffix(url, ".git")
-	parts := strings.FieldsFunc(url, func(r rune) bool { return r == '/' || r == ':' })
-	if len(parts) == 0 {
+func repoNameFromURL(remote string) string {
+	remote = strings.TrimSpace(remote)
+	repoPath := remote
+	switch {
+	case strings.Contains(remote, "://"):
+		u, err := url.Parse(remote)
+		if err != nil {
+			return ""
+		}
+		repoPath = u.Path
+	case scpLike(remote):
+		repoPath = remote[strings.Index(remote, ":")+1:]
+	}
+	repoPath = strings.TrimSuffix(strings.TrimRight(repoPath, "/"), ".git")
+	name := path.Base(repoPath)
+	if name == "." || name == "/" {
 		return ""
 	}
-	return strings.TrimSpace(parts[len(parts)-1])
+	return name
+}
+
+// scpLike reports whether s is "[user@]host:path", the ssh shorthand that is not a URL.
+func scpLike(s string) bool {
+	colon := strings.Index(s, ":")
+	return colon > 0 && !strings.Contains(s[:colon], "/")
 }
 
 func normalize(name string) string {
@@ -120,6 +141,10 @@ func detectConfig(dir, root string) (Result, bool, error) {
 	}
 }
 
+func notNameRune(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("._- ", r)
+}
+
 func realPath(p string) string {
 	if abs, err := filepath.Abs(p); err == nil {
 		p = abs
@@ -146,7 +171,7 @@ func readConfig(dir string) (Result, bool, error) {
 		return Result{}, true, fmt.Errorf("%w: %s: %v", ErrInvalidConfig, path, err)
 	}
 	name := strings.TrimSpace(cfg.ProjectName)
-	if name == "" || strings.ContainsAny(name, `/\`) || strings.IndexFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+	if name == "." || name == ".." || name == "" || strings.ContainsFunc(name, notNameRune) {
 		return Result{}, true, fmt.Errorf("%w: %s: project_name must be a plain name", ErrInvalidConfig, path)
 	}
 	return Result{normalize(name), ConfigOverride}, true, nil
