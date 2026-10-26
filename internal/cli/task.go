@@ -272,7 +272,7 @@ func fetchAll[T any](c *client.Client, path string, q url.Values, field string) 
 
 func withDaemon(fn func(*client.Client) error) error {
 	c := newClient()
-	if err := c.EnsureDaemon(); err != nil {
+	if err := c.EnsureDaemon(client.Policy{Replace: true}); err != nil {
 		return err
 	}
 	return fn(c)

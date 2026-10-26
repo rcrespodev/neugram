@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -65,15 +66,38 @@ func startReaped(cmd *exec.Cmd) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
-// EnsureDaemon follows the lifecycle of docs/specs/hooks.md: a daemon of
-// another version is asked to stop and replaced.
-func (c *Client) EnsureDaemon() error {
+// Policy says what EnsureDaemon may do to a live daemon of another version.
+type Policy struct {
+	// Replace asks that daemon to stop and starts this build's. Without it
+	// the live daemon is used as is and the mismatch is only logged.
+	Replace bool
+}
+
+const worktreeBuildMarker = "-wt-"
+
+// replaceable reports whether this build may stop a live daemon running
+// other. A worktree build must not take the shared daemon from a main build
+// unless NEUGRAM_ADDR was set explicitly.
+func (c *Client) replaceable(other string) bool {
+	if strings.Contains(c.Version, worktreeBuildMarker) && !strings.Contains(other, worktreeBuildMarker) {
+		return os.Getenv("NEUGRAM_ADDR") != ""
+	}
+	return true
+}
+
+// EnsureDaemon follows the lifecycle of docs/specs/hooks.md: with
+// Policy.Replace a daemon of another version is asked to stop and replaced.
+func (c *Client) EnsureDaemon(p Policy) error {
 	want := c.Version
 	h, err := c.Health()
 	if err == nil && h.Version == want {
 		return nil
 	}
 	if err == nil {
+		if !p.Replace || !c.replaceable(h.Version) {
+			c.logf("daemon en %s corre la versión %s, este binario es %s; no lo reemplazo", c.Addr, h.Version, want)
+			return nil
+		}
 		if resp, err := c.HTTP.Post(c.url("/shutdown"), "application/json", bytes.NewReader(nil)); err == nil {
 			resp.Body.Close()
 		}
